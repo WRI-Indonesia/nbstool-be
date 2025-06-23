@@ -1,0 +1,40 @@
+# .gitlab-ci.yml
+image: docker:20.10.16
+
+stages:
+  - push-to-cloud-build
+  - push-to-cloud-build-production
+
+push-to-cloud-build:
+  stage: push-to-cloud-build
+  image: google/cloud-sdk
+  rules:
+    - if: ($CI_COMMIT_BRANCH == "staging")
+  services:
+    - docker:20.10.16-dind
+  before_script:
+    - python3 build_runner/config_builder.py $CI_COMMIT_BRANCH
+    - python3 -m pip install requests --break-system-packages
+  script:
+    - 'python3 -c "import requests; author = \"$CI_COMMIT_AUTHOR\".replace(\"<\", \"(\").replace(\">\", \")\"); send_url = \"\"\"https://api.telegram.org/bot$TELEGRAM_API_KEY/sendMessage?chat_id=$TELEGRAM_CHAT_ID&message_thread_id=$TELEGRAM_TOPIC_ID&parse_mode=html&text=<code>BUILD ({}-BE): $CI_COMMIT_SHA</code>\n<code>CHANGES:</code>\n$CI_COMMIT_MESSAGE\n\"\"\".format(\"$CI_COMMIT_BRANCH\".upper()); print(requests.get(send_url).text)" '
+    - gcloud auth activate-service-account --key-file gcp-sa.json
+    - gcloud config set project $STAGING_GCP_PROJECT_ID
+    - rm gcp-sa.json
+    - gcloud builds submit . --config=build_runner/cloudbuild.yaml --async
+
+push-to-cloud-build-production:
+  stage: push-to-cloud-build-production
+  image: google/cloud-sdk
+  rules:
+    - if: ($CI_COMMIT_BRANCH == "production")
+  services:
+    - docker:20.10.16-dind
+  before_script:
+    - python3 build_runner/config_builder.py $CI_COMMIT_BRANCH
+    - python3 -m pip install requests --break-system-packages
+  script:
+    - 'python3 -c "import requests; author = \"$CI_COMMIT_AUTHOR\".replace(\"<\", \"(\").replace(\">\", \")\"); send_url = \"\"\"https://api.telegram.org/bot$TELEGRAM_API_KEY/sendMessage?chat_id=$TELEGRAM_CHAT_ID&message_thread_id=$TELEGRAM_TOPIC_ID&parse_mode=html&text=<code>BUILD ({}-BE): $CI_COMMIT_SHA</code>\n<code>CHANGES:</code>\n$CI_COMMIT_MESSAGE\n\"\"\".format(\"$CI_COMMIT_BRANCH\".upper()); print(requests.get(send_url).text)" '
+    - gcloud auth activate-service-account --key-file gcp-sa.json
+    - gcloud config set project $PRODUCTION_GCP_PROJECT_ID
+    - rm gcp-sa.json
+    - gcloud builds submit . --config=build_runner/cloudbuild.yaml --async

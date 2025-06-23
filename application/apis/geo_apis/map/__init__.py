@@ -1,0 +1,1 @@
+# application/apis/geo_apis/map/__init__.py

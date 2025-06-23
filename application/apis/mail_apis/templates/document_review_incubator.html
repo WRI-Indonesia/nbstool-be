@@ -1,0 +1,22 @@
+<html>
+    <body>
+        <p>Dear NbS Incubator Workstream Members,</p>
+        <br />
+        <p>We have received a request from an NbS Tool user to review their generated project document.</p>
+        <p>Below are the details of the user and the document:</p>
+        <ul>
+            <li><strong>Organization Name:</strong> {{ data.user.organization_name }}</li>
+            <li><strong>Organization Type:</strong> {{ data.organization_type.name }}</li>
+            <li><strong>Organization Address:</strong> {{ data.user.address }}</li>
+            <li><strong>Organization Country:</strong> {{ data.user.country }}</li>
+            <li><strong>PIC Name:</strong> {{ data.user.name }}</li>
+            <li><strong>PIC Phone Number:</strong> {{ data.user.phone }}</li>
+        </ul>
+        <p>The user's project document can be accessed via the following link to a secured Google Drive folder: <a href="{{ data.document_link }}">{{ data.document_link }}</a></p>
+        <p>We kindly ask you to review the document and provide your input and advice. Your feedback is crucial in helping them refine and improve their project.</p>
+        <p>Thank you for your cooperation and support.</p>
+        <br />
+        <p>Sincerely,</p>
+        <p>NbS Tool Team</p>
+    </body>
+</html>

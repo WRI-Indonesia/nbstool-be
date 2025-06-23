@@ -1,0 +1,1 @@
+# application/apis/master_apis/faq/__init__.py

@@ -1,0 +1,13 @@
+<html>
+    <body>
+        <p>Hi {{ data.name }},</p>
+        <p>Thanks for joining the NbS Tool! We're excited to have you on board.</p>
+        <p>Your account is almost ready - all you need to do is confirm your email address to unlock the full potential of NbS Tool.</p>
+        <p>Click <a href="{{ data.fe_url }}/auth/activate/{{ data.access_token }}">here</a> to activate your account. Or you can copy the link below and paste it into the browser</p>
+        <p>{{ data.fe_url }}/auth/activate/{{ data.access_token }}</p>
+        <p>Make sure you're clicking the link from a secure device. If you're still having trouble, feel free to reach out to our friendly support team at <a href="mailto:info@scenecoalition.org">info@scenecoalition.org</a>.</p>
+        <p>We can't wait to see what you achieve with NbS Tool!</p>
+        <p>Sincerely,</p>
+        <p>NbS Tool Team</p>
+    </body>
+</html>
