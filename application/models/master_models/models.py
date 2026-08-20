@@ -5,6 +5,7 @@ import os
 
 from datetime import datetime, timedelta
 from ...utils.common import get_date, map_attr
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Organization(db.Model):
     __tablename__ = 'tbl_organization_types'
@@ -72,6 +73,11 @@ class DocumentData(db.Model):
     section_3 = db.Column(db.PickleType)
     section_4 = db.Column(db.PickleType)
     section_5 = db.Column(db.PickleType)
+    section_1_json = db.Column(JSONB, nullable=True)
+    section_2_json = db.Column(JSONB, nullable=True)
+    section_3_json = db.Column(JSONB, nullable=True)
+    section_4_json = db.Column(JSONB, nullable=True)
+    section_5_json = db.Column(JSONB, nullable=True)
  
 
     @classmethod

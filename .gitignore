@@ -5,6 +5,7 @@ generated-file/
 build_runner/cloudbuild.yaml
 gcp-sa.json
 generated-geopdf/
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -3,8 +3,10 @@ from flask import jsonify, request, make_response, current_app
 from ... import db
 from ...models.geos_models.models import Polygons, MapExplorer
 
-import os, shutil, pathlib, json, pickle, datetime, rasterio, math, geopandas as gpd, numpy as np, forestatrisk as far
+import os, shutil, pathlib, json, pickle, datetime, rasterio, math, geopandas as gpd, numpy as np, forestatrisk as far, zipfile
 import time
+
+from . import gcs
 
 from rasterio.mask import mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -27,6 +29,7 @@ av_ero_path = "https://storage.googleapis.com/assets-geo/benefit/avoided_erosion
 available_intervention_types = ["Avoided deforestation", "Ecosystem restoration"]
 
 temp_file_path = "processed/"
+session_prefix_path = 'session-file'
 # list of data sources, paths and static variables -end-
 
 # general functions -begin-
@@ -95,6 +98,16 @@ def get_db(query_text:text) -> dict:
 
 def remove_process_folder(session_id: str):
     user_folder = pathlib.Path(temp_file_path, session_id).resolve()
+
+    if os.path.isdir(user_folder):
+        filenames = next(os.walk(user_folder), (None, None, []))[2]  # [] if no file
+        zip_name = 'benefits.zip'
+        zip_path = os.path.join(user_folder, zip_name)
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for fname in filenames:
+                zf.write(os.path.join(user_folder, fname), arcname=fname, compress_type=zipfile.ZIP_DEFLATED)
+        
+        gcs.upload(os.path.join(user_folder, zip_name), destination=os.path.join(session_prefix_path, session_id, 'benefits', zip_name))
 
     if os.path.isdir(user_folder):
         shutil.rmtree(user_folder)

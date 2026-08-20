@@ -16,6 +16,7 @@ from ...utils.common import get_date, map_attr
 # old
 from flask_bcrypt import Bcrypt
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.dialects.postgresql import JSONB
 # end old import
 
 bcrypt = Bcrypt()
@@ -33,6 +34,7 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=False)
     permission_policy = db.Column(db.Integer)
     extended_data = db.Column(db.PickleType, nullable=True)
+    extended_data_json = db.Column(JSONB, nullable=True)
     avatar = db.Column(db.LargeBinary, nullable=True)
     size_limit = db.Column(db.Float, default=100000)
 
@@ -201,3 +203,13 @@ class UserSessions(db.Model):
     @classmethod
     def find_by_session_id_is_project(cls, session_id):
         return cls.query.filter_by(session_id=session_id, is_active=1, is_project=True).first()
+
+class UserRequests(db.Model):
+    __tablename__ = "tbl_user_requests"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+    user_request = db.Column(db.String(4000), nullable = False)
+
+    @classmethod
+    def find_by_user_id(cls, user_id):
+        return cls.query.filter_by(user_id=user_id).order_by(UserSessions.created_at.desc()).all()

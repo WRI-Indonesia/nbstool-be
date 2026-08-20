@@ -54,6 +54,9 @@ def create_app():
         from .apis.incubator_apis import incubator_apis_blueprint
         app.register_blueprint(incubator_apis_blueprint, url_prefix='/incubators')
 
+        from .apis import apis_blueprint
+        app.register_blueprint(apis_blueprint, url_prefix='/api/v1')
+
         # from .apis.gis_apis import gis_apis_blueprint
         # app.register_blueprint(gis_apis_blueprint, url_prefix='/giss')
 

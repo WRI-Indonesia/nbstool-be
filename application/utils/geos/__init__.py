@@ -23,7 +23,7 @@ gcs = CloudStorage()
 
 class GeoUtils():
 
-    GIS_DB_CONNECTION_TIMEOUT = 10000 # 10 sec
+    GIS_DB_CONNECTION_TIMEOUT = 30000 # 30 sec
     engine = create_engine(current_app.config.get('GIS_DB_CONSTRING'), pool_size=30, max_overflow=0) # as recommended in https://docs.sqlalchemy.org/en/20/core/pooling.html
     connection = engine.connect()
     connection.execute(db.text("SET statement_timeout = {}".format(GIS_DB_CONNECTION_TIMEOUT)))

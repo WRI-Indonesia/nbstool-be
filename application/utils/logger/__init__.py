@@ -7,6 +7,8 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from ... import db
 from ...models.logger_models.models import Logs
 from ...models.master_models.models import Dictionary
+from ...utils.common import sanitize_for_jsonb
+
 
 def log_func(session, resp_data):
     try:
@@ -42,6 +44,8 @@ def log_func(session, resp_data):
 
     log.request_data = g_var.get('__request_data__')
     log.response_data = resp_data
+    log.request_data_json = sanitize_for_jsonb(g_var.get('__request_data__'))
+    log.response_data_json = sanitize_for_jsonb(resp_data)
 
     if known_activity_type.get('description') and '{{' in known_activity_type.get('description') and g_var.get('__description_data__'):
         log.description = render_template_string(known_activity_type.get('description'), data=g_var.get('__description_data__'))

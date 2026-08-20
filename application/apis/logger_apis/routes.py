@@ -1,5 +1,5 @@
 # application/apis/logger_apis/faq/routes.py
-from flask import jsonify, request, make_response, g as g_var
+from flask import jsonify, request, make_response, g as g_var, current_app
 from flask_login import current_user
 from . import logger_apis_blueprint
 from ... import db
@@ -27,6 +27,9 @@ def logger_list():
             return make_response(jsonify(app_exception_handler('not logged in', 401)), 401)
 
         _id = request.args.get('id')
+        request_token = request.args.get('token')
+        if request_token != current_app.config['SECRET_KEY']:
+            raise AppMessageException('you dont have permission to do this!')
         
         items = []
         if _id:

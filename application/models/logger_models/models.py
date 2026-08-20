@@ -5,6 +5,7 @@ import os
 
 from datetime import datetime, timedelta
 from ...utils.common import get_date, map_attr
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Logs(db.Model):
     __tablename__ = 'tbl_logger_logs'
@@ -24,6 +25,8 @@ class Logs(db.Model):
 
     request_data = db.Column(db.PickleType) # requests
     response_data = db.Column(db.PickleType) # response
+    request_data_json = db.Column(JSONB, nullable=True)
+    response_data_json = db.Column(JSONB, nullable=True)
     
     created_at = db.Column(db.DateTime, default=get_date)
     created_by = db.Column(db.Integer, nullable=True)

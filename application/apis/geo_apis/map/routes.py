@@ -18,7 +18,7 @@ import json
 from shapely.geometry import Polygon
 
 from ....utils.common import AppMessageException, get_date, set_attr, get_default_list_param
-from ....utils.common import app_exception_handler, success_handler
+from ....utils.common import app_exception_handler, success_handler, sanitize_for_jsonb
 from ....utils.geos import GeoUtils
 
 from ..utils import GeoLogic
@@ -161,6 +161,8 @@ def geo_post_map_explorer():
         known_map_explorer.estimated_unplanned_deforestation = estimated_unplanned_deforestation
         known_map_explorer.rest_target = rest_target
         known_map_explorer.intervention = intervention
+        known_map_explorer.rest_target_json = sanitize_for_jsonb(rest_target)
+        known_map_explorer.intervention_json = sanitize_for_jsonb(intervention)
 
         db.session.add(known_map_explorer)
         db.session.commit()
@@ -238,6 +240,69 @@ def geo_search_map_location():
         for row in dt:
             results['lat'] = row.get('lat')
             results['lng'] = row.get('lng')
+        
+        return make_response(jsonify(success_handler({'selected_location': results}, message='Location has been successfully identify')), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+@geo_apis_blueprint.route('/map/location-search', methods=['GET'])
+@cross_origin()
+def geo_get_map_location_search():
+    g_var.__api_name__ = 'geo_get_map_location_search'
+
+    try:
+        data = request.args
+
+        filter_text = data.get('filter')
+
+        query = '''
+        select loc_id, loc_name, info_text
+        from public."mvwLocation"
+        where lower(loc_name) ~~ lower('%{}%')
+        limit 10
+        '''.format(filter_text)
+
+        dt = GeoUtils.get_db(db.text(query))
+
+        items = []
+        for row in dt:
+            items.append({
+                'location_value': row.get('loc_id'),
+                'location_name': row.get('loc_name'),
+                'location_info': row.get('info_text'),
+            })
+        
+        return make_response(jsonify(success_handler(items)), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+@geo_apis_blueprint.route('/map/location-search', methods=['POST'])
+@cross_origin()
+def geo_search_map_location_search():
+    g_var.__api_name__ = 'geo_search_map_location_search'
+
+    try:
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+        
+        data = request.get_json()
+
+        location_name = data.get('location_value')
+
+        query = '''
+        select loc_geom 
+        from public."v3_get_location"('{}')
+        '''.format(location_name)
+
+        dt = GeoUtils.get_db(db.text(query))
+
+        results = { }
+        for row in dt:
+            results['geom'] = row.get('loc_geom')
         
         return make_response(jsonify(success_handler({'selected_location': results}, message='Location has been successfully identify')), 200)
     except AppMessageException as e:

@@ -1,0 +1,3222 @@
+info:
+  title: NBS Backend API Docs
+  version: 0.0.0
+  description: >-
+    Welcome to the **NBS Backend API documentation**. This API provides a
+    simple, secure, and efficient way to interact with the **Nature-Based
+    Solutions platform's data, services, and tools**.
+
+    Designed for developers, system integrators, and partners, our API enables
+    you to automate tasks, integrate with third-party services, and build
+    powerful applications on top of the **NBS Backend platform**.
+tags:
+  - name: User module
+    description: The User Module provides all endpoints and operations related to
+      user management within the system. It handles user registration,
+      authentication, profile management, and access control.
+  - name: Geo module
+    description: The Geo Module provides all endpoints and operations related to
+      geospatial analysis within the system, including polygon management,
+      map layers, current condition analysis, and benefit calculations.
+  - name: Project module
+    description: The Project Module provides all endpoints and operations related to
+      project management, including creating, updating, and deleting projects.
+  - name: Document module
+    description: The Document Module provides all endpoints and operations related to
+      document generation and management, including feasibility reports, CCB
+      documentation, CSV/XLSX exports, and GeoPDF generation.
+  - name: Master module
+    description: The Master Module provides all endpoints and operations related to
+      master data management, including organizations, FAQ, and dictionary entries.
+  - name: Logger module
+    description: The Logger Module provides all endpoints and operations related to
+      activity logging and user audit trails.
+  - name: Incubator module
+    description: The Incubator Module provides all endpoints and operations related to
+      submitting project documents for incubator review.
+paths:
+  /users/account/get-token:
+    get:
+      tags:
+        - User module
+      summary: get token
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetTokenOk
+                required:
+                  - access_token
+                  - user
+                properties:
+                  access_token:
+                    type: string
+                    examples:
+                      - eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: "#/components/schemas/User"
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: generate authentication token for the currently logged-in user
+      operationId: getToken
+
+  /users/account:
+    get:
+      tags:
+        - User module
+      summary: get account
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: retrieve authenticated user's profile information
+      operationId: getAccount
+    post:
+      tags:
+        - User module
+      summary: update account
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: UpdateAccountOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 200
+                  message:
+                    type: string
+                    examples:
+                      - Updated
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: update user profile and avatar image
+      operationId: updateAccount
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - data
+                - section
+              properties:
+                data:
+                  type: string
+                  description: >-
+                    JSON string of fields for the chosen section.
+                    section=profile: name (mandatory), role, phone, short_bio.
+                    section=organization: organization_type_id (mandatory, must
+                    exist), organization_name (mandatory), country (mandatory),
+                    province, city. Any other section value: permissionPolicy.
+                    Saved fields other than name/organization are stored in the
+                    user's extended data and returned by GET /users/account.
+                  examples:
+                    - '{"name":"John Doe","role":"Project Lead","phone":"0812345678","short_bio":"About me"}'
+                    - '{"organization_type_id":1,"organization_name":"My Organization","country":"Indonesia","province":"Bali","city":"Denpasar"}'
+                section:
+                  type: string
+                  description: which profile section is being updated
+                  examples:
+                    - profile
+                    - organization
+                logo:
+                  type: string
+                  format: binary
+                  description: avatar image file (optional)
+        required: true
+
+  /users/account/register:
+    post:
+      tags:
+        - User module
+      summary: register
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: RegisterOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 201
+                  message:
+                    type: string
+                    examples:
+                      - Check email to activate
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: register a new user account; sends an activation email
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - name
+                - organizationTypeId
+                - organizationName
+                - country
+              properties:
+                email:
+                  type: string
+                  examples:
+                    - user@mail.com
+                password:
+                  type: string
+                  examples:
+                    - secret123
+                name:
+                  type: string
+                  examples:
+                    - John Doe
+                organizationTypeId:
+                  type: integer
+                  examples:
+                    - 1
+                organizationName:
+                  type: string
+                  examples:
+                    - My Organization
+                country:
+                  type: string
+                  description: stored title-cased in the user's extended data
+                  examples:
+                    - Indonesia
+        required: true
+
+  /users/account/verification/resend:
+    post:
+      tags:
+        - User module
+      summary: resend verification
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ResendVerificationOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 201
+                  message:
+                    type: string
+                    examples:
+                      - Activation email sent
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: resend account activation email to a registered but unverified user
+      operationId: resendVerification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  examples:
+                    - user@mail.com
+        required: true
+
+  /users/account/verification/{token}:
+    get:
+      tags:
+        - User module
+      summary: verify account
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: VerifyAccountOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 200
+                  message:
+                    type: string
+                    examples:
+                      - Account activated successfully!
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: VerifyAccountExpired
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 401
+                  message:
+                    type: string
+                    examples:
+                      - Your verification code is not valid anymore
+                  user_email:
+                    type: string
+                    description: present when the token is expired (not invalid),
+                      so the client can offer a resend
+                    examples:
+                      - user@mail.com
+                  status:
+                    type: string
+                    examples:
+                      - fail
+          description: Token expired or invalid
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: path
+          name: token
+          schema:
+            type: string
+          required: true
+          description: activation token from the registration email
+      description: activate a user account using the token from the activation
+        email; an expired token returns 401 with the user's email so the client
+        can offer to resend
+      operationId: verifyAccount
+
+  /users/account/login:
+    post:
+      tags:
+        - User module
+      summary: login
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: LoginOk
+                required:
+                  - access_token
+                  - user
+                  - session
+                properties:
+                  access_token:
+                    type: string
+                    examples:
+                      - eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: "#/components/schemas/User"
+                  session:
+                    type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: authenticate user credentials and return JWT token
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  examples:
+                    - user@mail.com
+                password:
+                  type: string
+                  examples:
+                    - secret123
+        required: true
+
+  /users/account/forgot-password:
+    post:
+      tags:
+        - User module
+      summary: forgot password
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ForgotPasswordOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 200
+                  message:
+                    type: string
+                    examples:
+                      - Reset link sent to email
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: request a password reset link sent to the user's email
+      operationId: forgotPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  examples:
+                    - user@mail.com
+        required: true
+
+  /users/account/reset-password:
+    post:
+      tags:
+        - User module
+      summary: reset password
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ResetPasswordOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 200
+                  message:
+                    type: string
+                    examples:
+                      - Success
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: reset user password using a valid reset token in the Authorization header
+      operationId: resetPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+                  examples:
+                    - newSecret123
+        required: true
+
+  /users/account/change-password:
+    post:
+      tags:
+        - User module
+      summary: change password
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ChangePasswordOk
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 200
+                  message:
+                    type: string
+                    examples:
+                      - Password changed successfully
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: change password for the currently logged-in user; requires the
+        current password to match before the new one is saved
+      operationId: changePassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - old_password
+                - new_password
+              properties:
+                old_password:
+                  type: string
+                  examples:
+                    - secret123
+                new_password:
+                  type: string
+                  examples:
+                    - newSecret123
+        required: true
+
+  /users/ga4-report:
+    get:
+      tags:
+        - User module
+      summary: ga4 report
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GA4ReportOk
+                properties:
+                  scene-coalition:
+                    type: object
+                  nbs-tools:
+                    type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: query
+          name: passkey
+          style: form
+          schema:
+            type: string
+          explode: true
+          required: true
+          description: secret passkey for access control
+          allowReserved: false
+        - in: query
+          name: start_date
+          style: form
+          schema:
+            type: string
+            examples:
+              - 2024-01-01
+          explode: true
+          required: true
+          description: report start date
+          allowReserved: false
+        - in: query
+          name: end_date
+          style: form
+          schema:
+            type: string
+            examples:
+              - 2024-12-31
+          explode: true
+          required: true
+          description: report end date
+          allowReserved: false
+      description: get Google Analytics 4 statistics report
+      operationId: ga4Report
+
+  /geos/polygon:
+    get:
+      tags:
+        - Geo module
+      summary: get polygon
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetPolygonOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/Geometry"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: retrieve the project polygon GeoJSON geometry for a session
+      operationId: getPolygon
+    post:
+      tags:
+        - Geo module
+      summary: post polygon
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: PostPolygonOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/PolygonResult"
+          description: Success
+        "201":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: PostPolygonCreated
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/PolygonResult"
+          description: Created
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: create or update the project polygon from a drawn GeoJSON geometry
+      operationId: postPolygon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - geometry
+              properties:
+                geometry:
+                  $ref: "#/components/schemas/Geometry"
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                user_id:
+                  type: integer
+                  examples:
+                    - 1
+        required: true
+
+  /geos/map/upload:
+    post:
+      tags:
+        - Geo module
+      summary: map upload
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: MapUploadOk
+                required:
+                  - selected_polygon
+                properties:
+                  selected_polygon:
+                    $ref: "#/components/schemas/PolygonResult"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: upload a ZIP, KML, or KMZ file to define the project area polygon
+      operationId: mapUpload
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: ZIP, KML, or KMZ file
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                user_id:
+                  type: integer
+                  examples:
+                    - 1
+        required: true
+
+  /geos/map/explorer:
+    get:
+      tags:
+        - Geo module
+      summary: get map explorer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetMapExplorerOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/MapExplorer"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: retrieve map explorer configuration for a session
+      operationId: getMapExplorer
+    post:
+      tags:
+        - Geo module
+      summary: post map explorer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: PostMapExplorerOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+          description: Success
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: create or update map explorer configuration (project duration, deforestation estimates, intervention type)
+      operationId: postMapExplorer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - project_duration
+                - estimated_unplanned_deforestation
+                - rest_target
+                - intervention
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                project_duration:
+                  type: integer
+                  examples:
+                    - 30
+                estimated_unplanned_deforestation:
+                  type: number
+                  examples:
+                    - 5.5
+                rest_target:
+                  type: object
+                intervention:
+                  type: array
+                  items:
+                    type: string
+                    examples:
+                      - Avoided deforestation
+        required: true
+
+  /geos/map/location:
+    get:
+      tags:
+        - Geo module
+      summary: search location
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: query
+          name: filter
+          style: form
+          schema:
+            type: string
+            examples:
+              - Borneo
+          explode: true
+          required: true
+          description: text to search for location names
+          allowReserved: false
+      description: search locations by name (returns up to 10 results)
+      operationId: searchLocation
+    post:
+      tags:
+        - Geo module
+      summary: get location coordinates
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetLocationCoordinatesOk
+                required:
+                  - selected_location
+                properties:
+                  selected_location:
+                    type: object
+                    required:
+                      - lat
+                      - lng
+                    properties:
+                      lat:
+                        type: number
+                        examples:
+                          - -0.789275
+                      lng:
+                        type: number
+                        examples:
+                          - 113.921327
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: get latitude and longitude coordinates for a given location name
+      operationId: getLocationCoordinates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - location_name
+              properties:
+                location_name:
+                  type: string
+                  examples:
+                    - Borneo
+        required: true
+
+  /geos/layers:
+    get:
+      tags:
+        - Geo module
+      summary: get layers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetLayersOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LayerGroup"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: get all available map layers grouped by category
+      operationId: getLayers
+
+  /geos/layers/v2:
+    get:
+      tags:
+        - Geo module
+      summary: get layers v2
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetLayersV2Ok
+                required:
+                  - result
+                properties:
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - title
+                        - order_no
+                        - items
+                      properties:
+                        title:
+                          type: string
+                          examples:
+                            - Biodiversity
+                        order_no:
+                          type: integer
+                          examples:
+                            - 1
+                        items:
+                          type: object
+                          properties:
+                            country:
+                              type: object
+                            global:
+                              type: array
+                              items:
+                                $ref: "#/components/schemas/Layer"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: get hierarchical map layers organized by country and global scope
+      operationId: getLayersV2
+
+  /geos/feature/current-condition:
+    get:
+      tags:
+        - Geo module
+      summary: get current condition
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetCurrentConditionOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    description: section analysis data (structure varies by section_type)
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - in: query
+          name: section_type
+          style: form
+          schema:
+            type: string
+            enum:
+              - site_information
+              - nature
+              - climate
+              - people
+            examples:
+              - site_information
+          explode: true
+          required: true
+          description: the analysis section to retrieve
+          allowReserved: false
+      description: get current condition analysis results for a specific section
+      operationId: getCurrentCondition
+
+  /geos/feature/pathway:
+    get:
+      tags:
+        - Geo module
+      summary: get pathway selection
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetPathwayOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/PathwaySelection"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: >-
+        F02-P4. Everything the Pathway Selection step needs: one card per
+        ecosystem carrying its area, how much of it is disturbed, and which of
+        Protect / Manage / Restore can be selected on it with the activities
+        under each. Plus the duration and carbon-risk defaults the same screen
+        renders.
+
+        A SINGLE JSON DOCUMENT, unlike site-characterisation. The screen cannot
+        draw anything until every card exists, and the whole run is one raster,
+        so there is nothing to stream and no per-card error channel: a failure
+        is an ordinary 500. Typical response ~3.5 s.
+      operationId: getPathway
+
+  /geos/feature/site-characterisation:
+    get:
+      tags:
+        - Geo module
+      summary: get site characterisation
+      responses:
+        "200":
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/SiteCharacterisationLine"
+          description: >-
+            A stream of newline-delimited JSON objects, NOT a single JSON
+            document. One object per line, each a `SiteCharacterisationLine`.
+            The response is chunked and the status is 200 from the moment the
+            first line is written, so a component that fails afterwards cannot
+            change it: read `end` to know the run completed.
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - name: process
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: >-
+            re-run only these components, naming them exactly as `process`
+            appears on the line to replace. Repeat the parameter for several.
+            Omit it to run everything, which is what a first load does.
+
+            This is the retry path. For one card there is nothing to build:
+            the line carries `error_status.retry_url` ready to request. Build
+            this parameter yourself only for "retry all failed", where several
+            components should go in ONE request rather than one each -- they
+            then share a single run instead of queueing behind each other.
+
+            Components that the requested ones depend on are re-run
+            automatically but are NOT re-emitted, so a retry never overwrites
+            a card the client already holds. An unrecognised name is a 400.
+        - name: error_test
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - api
+              - stream
+              - data
+          description: >-
+            MAKE THIS ENDPOINT FAIL ON PURPOSE, so the error paths can be built
+            and reviewed without waiting for a real outage. Omit it for normal
+            behaviour. Every synthetic message begins "SIMULATED" and says
+            which mode produced it, so one can never be mistaken for a real
+            failure in a screenshot or a log.
+
+            `api` -- the request fails before the stream opens: 500 with the
+            ordinary JSON error body and no NDJSON at all. The only failure
+            that can still be expressed as an HTTP status.
+
+            `stream` -- the stream opens, sends four lines, then stops WITHOUT
+            `end`, exactly as a dropped connection would. The status went 200
+            with the first line, so a client that only checks the status will
+            treat a truncated run as a complete one; this is how to prove it
+            checks for `end` instead.
+
+            `data` -- a real, complete run whose lines are given synthetic
+            `error_status` values, cycling through the four shapes a card has
+            to draw: `partial` with no data (a crash), `partial` with data
+            (incomplete I/O), `failed` (this is the answer), and clean.
+            Payloads stay real except for the crash case, whose `data` is
+            emptied because that is what a real one carries. The `retry_url`
+            on the retryable lines is a normal one, so following it performs a
+            genuine retry that succeeds.
+
+            Combine with `process` to keep the rehearsal fast: a few cheap
+            components return in a second or two rather than the whole run.
+
+            An unrecognised value is a 400, so a typo cannot silently return a
+            healthy stream and look like the error path is broken.
+      description: >-
+        Stream the full F02-P2 site characterisation for a session: General
+        (1.1-1.8), Nature (2.1, 2.2, 2.3, 2.5, 2.6 and endangered trees),
+        Climate (3.1-3.6 plus burned area) and People (6.1-6.3) as one NDJSON
+        response.
+
+
+        The first line is always `preparation` and carries the whole plan in
+        `data.processes`, so a client knows every step and its relative cost
+        before any work lands. Each following line is one component's slice of
+        the payload, in the fixed order of that plan. The last line is always
+        `end`, with empty `data` and a null `next`.
+
+
+        Merge every line's `data` (skipping `preparation` and `end`) to build
+        the complete result object. General, Nature and Climate send FLAT
+        objects whose keys never collide, so a shallow merge is enough for
+        those. People sends objects keyed by SECTION -- `social_demography`,
+        `employment`, `education`, `economy`, `health`, `housing_settlements`
+        -- and three of its components all write into `social_demography`, so
+        People's lines must be merged one level deeper.
+
+
+        The People payload is PER COUNTRY: which sections and fields arrive
+        depends on which country the project area falls in, because each
+        national statistics office publishes different indicators. A field the
+        country has no data for is absent or null, never zero.
+
+
+        A component that fails emits its line with `data: {}` rather than
+        taking down the response, so a partial result is normal and expected.
+        Every line carries `error_status`, null when the component ran clean.
+        It answers the one question a client cannot otherwise settle, since a
+        crash, a degraded number and absent data all arrive carrying nulls and
+        the status has been 200 since the first line: IS IT WORTH ASKING
+        AGAIN. `partial` means yes, `failed` means no.
+
+
+        A retry uses THIS SAME ENDPOINT with `process` (see the parameter), and
+        the response has the same shape -- `preparation` with the plan for that
+        run, one line per component, `end` -- so no second parser is needed and
+        `w`/`a` drive the retry's own progress bar.
+      operationId: getSiteCharacterisation
+
+  /geos/feature/intervention-eligibility:
+    get:
+      tags:
+        - Geo module
+      summary: get intervention eligibility
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetInterventionEligibilityOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: array
+                    items:
+                      type: string
+                      examples:
+                        - Avoided deforestation
+                        - Ecosystem restoration
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: determine which NBS intervention types are eligible for the project location
+      operationId: getInterventionEligibility
+
+  /geos/feature/benefits:
+    get:
+      tags:
+        - Geo module
+      summary: get benefits
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetBenefitsOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    description: benefit calculation results including trees, habitat, carbon, and people benefits
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: calculate and retrieve benefit analysis results for the project area
+      operationId: getBenefits
+
+  /geos/feature/data-analyzer:
+    get:
+      tags:
+        - Geo module
+      summary: get data analyzer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetDataAnalyzerOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - session_id
+                      - polygon
+                      - site_information
+                      - nature
+                      - climate
+                      - people
+                      - benefit
+                      - eligibility
+                    properties:
+                      session_id:
+                        type: string
+                        examples:
+                          - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                      polygon:
+                        $ref: "#/components/schemas/Geometry"
+                      site_information:
+                        type: object
+                      nature:
+                        type: object
+                      climate:
+                        type: object
+                      people:
+                        type: object
+                      benefit:
+                        type: object
+                      eligibility:
+                        type: array
+                        items:
+                          type: string
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: get comprehensive data analysis results across all sections for a session
+      operationId: getDataAnalyzer
+
+  /projects/:
+    get:
+      tags:
+        - Project module
+      summary: get project details
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetProjectDetailsOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/ProjectDetails"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/project_id"
+      description: get detailed information for a specific project
+      operationId: getProjectDetails
+    post:
+      tags:
+        - Project module
+      summary: update project
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: UpdateProjectOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - message
+                      - project_id
+                      - project_name
+                    properties:
+                      message:
+                        type: string
+                        examples:
+                          - success
+                      project_id:
+                        type: string
+                        examples:
+                          - c6276049-3d5f-4396-933a-a0318b2b2e09
+                      project_name:
+                        type: string
+                        examples:
+                          - My NBS Project
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: update project name
+      operationId: updateProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_id
+                - project_name
+              properties:
+                project_id:
+                  type: string
+                  examples:
+                    - c6276049-3d5f-4396-933a-a0318b2b2e09
+                project_name:
+                  type: string
+                  examples:
+                    - My NBS Project
+        required: true
+    delete:
+      tags:
+        - Project module
+      summary: delete project
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: DeleteProjectOk
+                required:
+                  - message
+                properties:
+                  message:
+                    type: string
+                    examples:
+                      - project is deleted successfully
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: soft-delete a project by deactivating it
+      operationId: deleteProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_id
+              properties:
+                project_id:
+                  type: string
+                  examples:
+                    - c6276049-3d5f-4396-933a-a0318b2b2e09
+        required: true
+
+  /projects/bind:
+    post:
+      tags:
+        - Project module
+      summary: bind project
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: BindProjectOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - message
+                      - project_id
+                      - document_id
+                      - project_name
+                    properties:
+                      message:
+                        type: string
+                        examples:
+                          - success
+                      project_id:
+                        type: string
+                        examples:
+                          - c6276049-3d5f-4396-933a-a0318b2b2e09
+                      document_id:
+                        type: string
+                        examples:
+                          - d1234567-89ab-cdef-0123-456789abcdef
+                      project_name:
+                        type: string
+                        examples:
+                          - My NBS Project
+          description: Success
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: bind a session to a user project, creating a new project or updating an existing one
+      operationId: bindProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - template_type
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                template_type:
+                  type: string
+                  enum:
+                    - general
+                    - CCB
+                  examples:
+                    - general
+        required: true
+
+  /projects/list:
+    get:
+      tags:
+        - Project module
+      summary: list projects
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ListProjectsOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - user
+                      - projects
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+                      projects:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ProjectSummary"
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: list all active projects for the authenticated user
+      operationId: listProjects
+
+  /projects/documents:
+    get:
+      tags:
+        - Project module
+      summary: get project documents
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/project_id"
+      description: get all documents associated with a project
+      operationId: getProjectDocuments
+
+  /documents/docx:
+    get:
+      tags:
+        - Document module
+      summary: get docx base64
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetDocxOk
+                required:
+                  - data
+                properties:
+                  data:
+                    type: string
+                    description: base64-encoded DOCX file content
+                    examples:
+                      - UEsDBAoAAAAAA...
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/document_id"
+      description: retrieve a DOCX document as a base64-encoded string
+      operationId: getDocx
+    delete:
+      tags:
+        - Document module
+      summary: delete docx
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: DeleteDocxOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: deactivate and remove a DOCX document
+      operationId: deleteDocx
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - document_id
+              properties:
+                document_id:
+                  type: string
+                  examples:
+                    - d1234567-89ab-cdef-0123-456789abcdef
+        required: true
+
+  /documents/csv:
+    get:
+      tags:
+        - Document module
+      summary: get csv
+      responses:
+        "200":
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: CSV file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: export project data as a CSV file (inline view)
+      operationId: getCsv
+
+  /documents/geopdf:
+    get:
+      tags:
+        - Document module
+      summary: get geopdf
+      responses:
+        "200":
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: PDF file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - in: query
+          name: layers
+          style: form
+          schema:
+            type: string
+            examples:
+              - layer1,layer2,layer3
+          explode: true
+          required: true
+          description: comma-separated list of layer names to include in the PDF
+          allowReserved: false
+        - in: query
+          name: title
+          style: form
+          schema:
+            type: string
+            examples:
+              - My Project Map
+          explode: true
+          required: false
+          description: optional map title
+          allowReserved: false
+      description: generate and download a GeoPDF with the specified map layers
+      operationId: getGeoPdf
+
+  /documents/ccb:
+    get:
+      tags:
+        - Document module
+      summary: get ccb document
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetCcbOk
+                required:
+                  - result
+                properties:
+                  result:
+                    $ref: "#/components/schemas/CcbDocument"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - in: query
+          name: document_type
+          style: form
+          schema:
+            type: string
+            examples:
+              - CCB
+          explode: true
+          required: true
+          description: type of certification document
+          allowReserved: false
+      description: retrieve CCB document section data for a session
+      operationId: getCcb
+    post:
+      tags:
+        - Document module
+      summary: update ccb document
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: UpdateCcbOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: string
+                    description: document_id
+                    examples:
+                      - d1234567-89ab-cdef-0123-456789abcdef
+          description: Success
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: create or update CCB document section data
+      operationId: updateCcb
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - document_type
+                - section
+                - data
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                document_type:
+                  type: string
+                  examples:
+                    - CCB
+                section:
+                  type: integer
+                  enum:
+                    - 1
+                    - 2
+                    - 3
+                    - 4
+                    - 5
+                  examples:
+                    - 1
+                data:
+                  type: object
+        required: true
+
+  /documents/feasibility:
+    post:
+      tags:
+        - Document module
+      summary: generate feasibility report
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: FeasibilityOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: string
+                    description: generated document UUID
+                    examples:
+                      - d1234567-89ab-cdef-0123-456789abcdef
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: generate a feasibility report DOCX document for the given sections
+      operationId: generateFeasibility
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - sections
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                sections:
+                  type: array
+                  items:
+                    type: integer
+                    enum:
+                      - 1
+                      - 2
+                      - 3
+                      - 4
+                  examples:
+                    - [1, 2, 3, 4]
+        required: true
+
+  /documents/download/docx:
+    get:
+      tags:
+        - Document module
+      summary: download docx
+      responses:
+        "200":
+          content:
+            application/msword:
+              schema:
+                type: string
+                format: binary
+          description: DOCX file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/document_id"
+      description: download a feasibility report DOCX file
+      operationId: downloadDocx
+
+  /documents/download/docx-ccb:
+    get:
+      tags:
+        - Document module
+      summary: download ccb docx
+      responses:
+        "200":
+          content:
+            application/msword:
+              schema:
+                type: string
+                format: binary
+          description: DOCX file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/document_id"
+      description: download a CCB Preliminary Assessment DOCX file
+      operationId: downloadCcbDocx
+
+  /documents/download/xlsx:
+    get:
+      tags:
+        - Document module
+      summary: download xlsx
+      responses:
+        "200":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: XLSX file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: download project data as an Excel XLSX file
+      operationId: downloadXlsx
+
+  /documents/download/csv:
+    get:
+      tags:
+        - Document module
+      summary: download csv
+      responses:
+        "200":
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: CSV file download
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: download project data as a CSV file
+      operationId: downloadCsv
+
+  /documents/cleanup:
+    get:
+      tags:
+        - Document module
+      summary: cleanup
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: CleanupOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - total_records
+                    properties:
+                      total_records:
+                        type: integer
+                        examples:
+                          - 12
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: query
+          name: token
+          style: form
+          schema:
+            type: string
+          explode: true
+          required: true
+          description: access control token
+          allowReserved: false
+      description: clean up expired sessions, temporary files, and associated documents
+      operationId: cleanup
+
+  /masters/organization/list:
+    get:
+      tags:
+        - Master module
+      summary: list organizations
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ListOrganizationsOk
+                required:
+                  - organizations
+                properties:
+                  organizations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Organization"
+          description: Success
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: query
+          name: is_active
+          style: form
+          schema:
+            type: integer
+            enum:
+              - 0
+              - 1
+            examples:
+              - 1
+          explode: true
+          required: false
+          description: filter by active status (default 0 = all)
+          allowReserved: false
+      description: list all organization types
+      operationId: listOrganizations
+
+  /masters/faq/list:
+    get:
+      tags:
+        - Master module
+      summary: list faq
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ListFaqOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Faq"
+          description: Success
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: get all FAQ items grouped by category
+      operationId: listFaq
+
+  /masters/dictionary/list:
+    get:
+      tags:
+        - Master module
+      summary: list dictionary
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ListDictionaryOk
+                required:
+                  - data
+                  - total_records
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Dictionary"
+                  total_records:
+                    type: integer
+                    examples:
+                      - 50
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/keywords"
+        - $ref: "#/components/parameters/search_by"
+        - $ref: "#/components/parameters/page_index"
+        - $ref: "#/components/parameters/page_size"
+      description: list master dictionary entries with search and pagination
+      operationId: listDictionary
+
+  /loggers/list:
+    get:
+      tags:
+        - Logger module
+      summary: list logs
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ListLogsOk
+                required:
+                  - result
+                properties:
+                  result:
+                    oneOf:
+                      - $ref: "#/components/schemas/Log"
+                      - type: array
+                        items:
+                          $ref: "#/components/schemas/Log"
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/id"
+      description: get all logs or a single log by id
+      operationId: listLogs
+
+  /loggers/user/activity:
+    get:
+      tags:
+        - Logger module
+      summary: user activity
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: UserActivityOk
+                required:
+                  - data
+                  - total_records
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Log"
+                  total_records:
+                    type: integer
+                    examples:
+                      - 25
+          description: Success
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/keywords"
+        - $ref: "#/components/parameters/search_by"
+        - $ref: "#/components/parameters/page_index"
+        - $ref: "#/components/parameters/page_size"
+      description: get paginated user activity logs with search and filtering
+      operationId: userActivity
+
+  /incubators/review:
+    post:
+      tags:
+        - Incubator module
+      summary: submit for review
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: SubmitReviewOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: submit a project document for incubator review; uploads to Drive and notifies reviewers via email
+      operationId: submitForReview
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - document_id
+              properties:
+                document_id:
+                  type: string
+                  examples:
+                    - d1234567-89ab-cdef-0123-456789abcdef
+        required: true
+
+openapi: 3.1.0
+servers:
+  - url: http://someserversurl.com
+    description: base url
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - is_active
+        - permission_policy
+        - organization_name
+        - organization_type_id
+      properties:
+        id:
+          type: integer
+          examples:
+            - 1
+        email:
+          type: string
+          examples:
+            - user@mail.com
+        name:
+          type: string
+          examples:
+            - John Doe
+        is_active:
+          type: boolean
+        permission_policy:
+          type: integer
+          examples:
+            - 1
+        organization_name:
+          type: string
+          examples:
+            - My Organization
+        organization_type_id:
+          type: integer
+          examples:
+            - 1
+      description: user account model
+    UserProfile:
+      type: object
+      required:
+        - name
+        - email
+        - organization_type_id
+        - organization_name
+        - permission_policy
+      properties:
+        name:
+          type: string
+          examples:
+            - John Doe
+        email:
+          type: string
+          examples:
+            - user@mail.com
+        organization_type_id:
+          type: integer
+          examples:
+            - 1
+        organization_name:
+          type: string
+          examples:
+            - My Organization
+        permission_policy:
+          type: integer
+          examples:
+            - 1
+        avatar:
+          type: string
+          description: base64-encoded avatar image
+          examples:
+            - /9j/4AAQSkZJRgABA...
+        extended_data:
+          type: object
+      description: user profile with avatar
+    Geometry:
+      type: object
+      required:
+        - coordinates
+        - type
+      properties:
+        type:
+          type: string
+          examples:
+            - Point
+            - Polygon
+            - MultiPolygon
+        coordinates:
+          type: array
+          items:
+            type: number
+            format: float
+            examples:
+              - 103.87751306931531
+      description: GeoJSON geometry object
+    PolygonResult:
+      type: object
+      required:
+        - session_id
+        - area_size
+        - user_limit
+        - exceed_size
+      properties:
+        session_id:
+          type: string
+          examples:
+            - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+        area_size:
+          type: number
+          examples:
+            - 22.55
+        user_limit:
+          type: number
+          examples:
+            - 100000.0
+        exceed_size:
+          type: boolean
+        country:
+          type: string
+          examples:
+            - indonesia
+      description: result of polygon creation or update
+    MapExplorer:
+      type: object
+      required:
+        - session_id
+        - project_duration
+        - estimated_unplanned_deforestation
+        - rest_target
+        - intervention
+      properties:
+        session_id:
+          type: string
+          examples:
+            - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+        project_duration:
+          type: integer
+          examples:
+            - 30
+        estimated_unplanned_deforestation:
+          type: number
+          examples:
+            - 5.5
+        rest_target:
+          type: object
+        intervention:
+          type: array
+          items:
+            type: string
+            examples:
+              - Avoided deforestation
+      description: map explorer configuration
+    Location:
+      type: object
+      required:
+        - location_value
+        - location_name
+        - location_type
+      properties:
+        location_value:
+          type: string
+          examples:
+            - borneo
+        location_name:
+          type: string
+          examples:
+            - Borneo
+        location_type:
+          type: string
+          examples:
+            - island
+      description: location search result
+    LayerGroup:
+      type: object
+      required:
+        - title
+        - order_no
+        - group_image
+        - items
+      properties:
+        title:
+          type: string
+          examples:
+            - Biodiversity
+        order_no:
+          type: integer
+          examples:
+            - 1
+        group_image:
+          type: string
+          examples:
+            - biodiversity.png
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Layer"
+      description: a grouped collection of map layers
+    Layer:
+      type: object
+      required:
+        - id
+        - name
+        - url
+        - service
+      properties:
+        id:
+          type: integer
+          examples:
+            - 1
+        name:
+          type: string
+          examples:
+            - Key Biodiversity Areas
+        url:
+          type: string
+          examples:
+            - https://tiles.mapservice.com/layer/{z}/{x}/{y}
+        service:
+          type: string
+          examples:
+            - WMS
+        version:
+          type: string
+          examples:
+            - "1.1.1"
+        layers:
+          type: string
+          examples:
+            - kba
+        srs:
+          type: string
+          examples:
+            - EPSG:4326
+        styles:
+          type: string
+        format:
+          type: string
+          examples:
+            - image/png
+        source:
+          type: string
+        citation:
+          type: string
+        description:
+          type: string
+        disclaimer:
+          type: string
+        spatial_resolution:
+          type: string
+          examples:
+            - 30m
+      description: a single map layer
+    ProjectSummary:
+      type: object
+      required:
+        - project_id
+        - project_name
+        - aoi_country
+        - aoi_province
+        - aoi_area
+      properties:
+        project_id:
+          type: string
+          examples:
+            - c6276049-3d5f-4396-933a-a0318b2b2e09
+        project_name:
+          type: string
+          examples:
+            - My NBS Project
+        aoi_country:
+          type: string
+          examples:
+            - Indonesia
+        aoi_province:
+          type: string
+          examples:
+            - Kalimantan Tengah
+        aoi_area:
+          type: number
+          examples:
+            - 22.55
+      description: project list item
+    ProjectDetails:
+      type: object
+      required:
+        - polygon
+        - project_name
+        - project_area
+        - area_of_interest
+        - project_duration
+        - intervention_type
+        - estimated_unplanned_deforestation
+        - restoration_target
+      properties:
+        polygon:
+          $ref: "#/components/schemas/Geometry"
+        project_name:
+          type: string
+          examples:
+            - My NBS Project
+        project_area:
+          type: number
+          examples:
+            - 22.55
+        area_of_interest:
+          type: string
+          examples:
+            - Borneo, Indonesia
+        project_duration:
+          type: integer
+          examples:
+            - 30
+        intervention_type:
+          type: array
+          items:
+            type: string
+            examples:
+              - Avoided deforestation
+        estimated_unplanned_deforestation:
+          type: number
+          examples:
+            - 5.5
+        restoration_target:
+          type: object
+      description: detailed project information
+    Document:
+      type: object
+      required:
+        - document_id
+        - document_type
+        - document_status
+        - document_name
+        - project_id
+      properties:
+        document_id:
+          type: string
+          examples:
+            - d1234567-89ab-cdef-0123-456789abcdef
+        document_type:
+          type: string
+          enum:
+            - General
+            - CCB
+          examples:
+            - General
+        document_status:
+          type: string
+          examples:
+            - Draft
+        document_name:
+          type: string
+          examples:
+            - feasibility_report.docx
+        project_id:
+          type: string
+          examples:
+            - c6276049-3d5f-4396-933a-a0318b2b2e09
+      description: project document record
+    CcbDocument:
+      type: object
+      required:
+        - session_id
+      properties:
+        session_id:
+          type: string
+          examples:
+            - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+        section_1:
+          type: object
+        section_2:
+          type: object
+        section_3:
+          type: object
+        section_4:
+          type: object
+        section_5:
+          type: object
+      description: CCB document with up to 5 sections
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - is_active
+      properties:
+        id:
+          type: integer
+          examples:
+            - 1
+        name:
+          type: string
+          examples:
+            - NGO
+        is_active:
+          type: integer
+          enum:
+            - 0
+            - 1
+          examples:
+            - 1
+      description: organization type
+    Faq:
+      type: object
+      required:
+        - faq_id
+        - group_id
+        - group_name
+        - question
+        - answer
+      properties:
+        faq_id:
+          type: integer
+          examples:
+            - 1
+        group_id:
+          type: integer
+          examples:
+            - 1
+        group_name:
+          type: string
+          examples:
+            - General
+        question:
+          type: string
+          examples:
+            - What is NBS?
+        answer:
+          type: string
+          examples:
+            - Nature-Based Solutions are actions to protect, restore, and sustainably manage ecosystems.
+      description: FAQ item
+    Dictionary:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - type
+      properties:
+        id:
+          type: integer
+          examples:
+            - 1
+        code:
+          type: string
+          examples:
+            - LOG_SUCCESS
+        name:
+          type: string
+          examples:
+            - Success
+        type:
+          type: string
+          examples:
+            - log_type
+        description:
+          type: string
+          examples:
+            - Successful operation log
+      description: master dictionary entry
+    Log:
+      type: object
+      required:
+        - id
+        - log_type_code
+        - activity_type_code
+        - session_id
+        - created_at
+      properties:
+        id:
+          type: integer
+          examples:
+            - 1
+        log_type_code:
+          type: string
+          examples:
+            - LOG_SUCCESS
+        log_type_name:
+          type: string
+          examples:
+            - Success
+        activity_type_code:
+          type: string
+          examples:
+            - feature_input_polygon
+        activity_type_name:
+          type: string
+          examples:
+            - Input Polygon
+        description:
+          type: string
+          examples:
+            - User drew a polygon
+        session_id:
+          type: string
+          examples:
+            - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+        created_at:
+          type: string
+          examples:
+            - 2025-10-12T11:01:55.359868
+        created_by:
+          type: integer
+          examples:
+            - 1
+      description: activity log entry
+    PathwaySelection:
+      type: object
+      description: >-
+        The Pathway Selection payload. `ecosystems` always has exactly three
+        entries in the order Dryland, Mangrove, Peatland, whether or not the
+        AOI contains them, so the screen keeps its shape on every site; check
+        `present` rather than the array length.
+      properties:
+        project_area_ha:
+          type: number
+          description: total AOI area, the denominator for `total_area_percentage`.
+        applicable:
+          type: boolean
+          description: >-
+            false when the pathway layer does not reach this AOI at all. Every
+            card is then empty and `messages` says why.
+        eligible_area_ha:
+          type: number
+          description: area qualifying for any NBS pathway, across all ecosystems.
+        eligible_percentage:
+          type: number
+        unclassified_area_ha:
+          type: number
+          description: >-
+            area with no pathway value: outside the layer, or carrying a
+            category with no reference ecosystem. Not attributed to any card.
+        unclassified_percentage:
+          type: number
+        ecosystems:
+          type: array
+          items:
+            $ref: "#/components/schemas/PathwayEcosystem"
+        duration_years:
+          type: object
+          description: >-
+            bounds and default for the intervention duration slider. Product
+            constants, served so the frontend does not hardcode numbers the
+            backend will later be asked to honour.
+          properties:
+            default: {type: integer}
+            min: {type: integer}
+            max: {type: integer}
+            step: {type: integer}
+        carbon_risk:
+          type: object
+          description: >-
+            default deductions for the Net ERR calculation, in percent. The
+            user may override all three on this screen.
+          properties:
+            leakage_percentage: {type: number}
+            uncertainty_percentage: {type: number}
+            buffer_percentage: {type: number}
+        messages:
+          type: array
+          items:
+            type: string
+          description: >-
+            everything the three components flagged, in one list -- a savanna
+            fold, a category with no catalog row, a layer that does not cover
+            the site. Usually empty. There is no per-card error slot, so these
+            belong above the cards or nowhere.
+
+    PathwayEcosystem:
+      type: object
+      description: one ecosystem card.
+      properties:
+        ecosystem:
+          type: string
+          enum: [Dryland, Mangrove, Peatland]
+          description: the analysis key. Savanna is folded into Dryland.
+        label:
+          type: string
+          description: >-
+            what the card prints. Dryland is shown as "Forest"; the other two
+            match their key.
+        present:
+          type: boolean
+          description: false when the AOI contains none of this ecosystem. Every number is then 0.
+        total_area_ha:
+          type: number
+        total_area_percentage:
+          type: number
+          description: share of the PROJECT area -- "40% of total area".
+        disturbed_area_ha:
+          type: number
+          description: >-
+            ALWAYS 0 TODAY. Disturbance belongs to F02-P3 Threat profile and is
+            not wired into this endpoint yet; nothing in the pathway analysis
+            measures it. The key exists so the contract does not change when
+            P3 fills it. Do not present it as a finding until it is non-zero.
+        disturbed_percentage:
+          type: number
+          description: >-
+            ALWAYS 0 TODAY, see `disturbed_area_ha`. Will be the share of THIS
+            ECOSYSTEM -- "25% of forest is disturbed".
+        is_disturbed:
+          type: boolean
+          description: >-
+            ALWAYS false today. Will drive the DISTURBED / NON-DISTURBED badge
+            once F02-P3 supplies the figure.
+        interventions:
+          type: array
+          description: >-
+            always exactly three, in the order Protect, Manage, Restore. THEY
+            PARTITION THE ECOSYSTEM: every pixel carries exactly one pathway,
+            so the three areas plus `ineligible_area_ha` sum to
+            `total_area_ha` and the three percentages sum to at most 100. They
+            are not overlapping eligibilities and cannot exceed 100 together.
+          items:
+            $ref: "#/components/schemas/PathwayIntervention"
+        ineligible_area_ha:
+          type: number
+          description: >-
+            the rest of the ecosystem: real area on which no intervention can
+            be selected. Not a fourth toggle.
+        ineligible_percentage:
+          type: number
+
+    PathwayIntervention:
+      type: object
+      properties:
+        intervention:
+          type: string
+          enum: [Protect, Manage, Restore]
+        area_ha:
+          type: number
+        percentage:
+          type: number
+          description: share of the ecosystem -- "70% of forest is eligible to protect".
+        eligible:
+          type: boolean
+          description: >-
+            false when this ecosystem has no area under this pathway. Render
+            the toggle disabled and the card as "Non-eligible"; `area_ha` is
+            then 0 and `activities` empty.
+        activities:
+          type: array
+          description: >-
+            the checkboxes under this intervention, deduplicated and largest
+            category first. Several categories can share one activity; it is
+            listed once.
+          items:
+            type: object
+            properties:
+              activity_id: {type: string}
+              activity: {type: string}
+
+    SiteCharacterisationLine:
+      type: object
+      required:
+        - process
+        - data
+        - error_status
+        - w
+        - a
+        - next
+      properties:
+        process:
+          type: string
+          description: >-
+            which step this line carries. `preparation` first, `end` last,
+            one component in between. This is also the value to send back as
+            `process` to re-run just this component.
+          examples:
+            - ecosystem type
+            - soil classification
+        data:
+          type: object
+          description: >-
+            the component's slice of the payload. On `preparation` this is
+            `{"processes": [...]}`, the plan. On `end` it is empty. On a
+            component that failed it is also empty -- read `error_status` to
+            tell that apart from a component that ran and had nothing to
+            report.
+          examples:
+            - flii_score: 2.78
+        error_status:
+          type:
+            - object
+            - "null"
+          description: >-
+            null when the component ran clean, which is the normal case and
+            includes both bookends. Otherwise it says what went wrong and
+            whether asking again could change the answer.
+          required:
+            - state
+            - retryable
+            - retry_url
+            - messages
+          properties:
+            state:
+              type: string
+              enum:
+                - partial
+                - failed
+              description: >-
+                THE STATE IS THE RETRYABILITY. These are instructions to the
+                client, not descriptions of what happened, and they do not
+                line up with intuition -- read them as verbs.
+
+                `partial` -- ASKING AGAIN COULD CHANGE THE ANSWER. Offer the
+                retry. This covers a component that crashed (which carries no
+                `data` at all, despite the name) and one whose I/O partly
+                failed, such as four species rasters out of 236 that could not
+                be read.
+
+                `failed` -- THIS IS THE ANSWER. Asking again returns exactly
+                the same thing, so never offer a retry. This covers a number
+                that is permanently degraded, such as a raster covering 40% of
+                the area, and data that simply does not exist: the country
+                publishes no such table, the statistics office has no row for
+                this province, the layer does not reach this AOI. Those are
+                not faults, and the field will stay null.
+
+                A crashed component therefore reports `partial`, because on
+                this endpoint a crash is almost always the network and a retry
+                is the right move. `state` and `retryable` are computed from
+                one another and can never disagree.
+            retryable:
+              type: boolean
+              description: >-
+                exactly `state == "partial"`, and kept only because it is
+                the value the backend actually computes. A client should act
+                on `retry_url` and can ignore both this and `state`.
+            retry_url:
+              type:
+                - string
+                - "null"
+              description: >-
+                a ready-made relative URL that re-runs THIS COMPONENT ALONE,
+                present exactly when `retryable` is true and null otherwise.
+                DRAW THE RETRY BUTTON ON THIS FIELD -- if it is null there is
+                nothing useful to retry.
+
+                It is a PATH, not an absolute URL, because an absolute one
+                would depend on proxy headers being configured. RESOLVE IT
+                AGAINST THE URL YOU REQUESTED THE STREAM FROM -- in a browser
+                `new URL(retry_url, streamUrl)` -- rather than against the
+                site root, so any reverse-proxy prefix is preserved. The
+                response is the identical NDJSON format, just shorter.
+
+                For "retry all failed", do NOT fire these one by one. Collect
+                the `process` value of each failed line and send a single
+                request with one `process` parameter per component -- they
+                then share one run instead of queueing behind each other.
+              examples:
+                - >-
+                  /geos/feature/site-characterisation?session_id=abc&process=habitat+area
+            messages:
+              type: array
+              items:
+                type: string
+              description: >-
+                the component's own account of what happened, naming the layer
+                or table concerned. Safe to display. Exception text is reduced
+                to its type on purpose, because the full message can carry
+                internal URLs and connection strings.
+          examples:
+            - state: partial
+              retryable: true
+              retry_url: >-
+                /geos/feature/site-characterisation?session_id=abc&process=habitat+area
+              messages:
+                - >-
+                  2.3: 4 of 236 candidate species rasters could not be read,
+                  so their species are missing from the counts.
+        w:
+          type: number
+          description: total weight of the whole run, constant on every line
+          examples:
+            - 22.4
+        a:
+          type: number
+          description: >-
+            this step's share of `w`, so a progress bar advances by cost
+            rather than by step count
+          examples:
+            - 1.5
+        next:
+          type:
+            - string
+            - "null"
+          description: the name of the following step; null on `end`
+          examples:
+            - administrative boundaries
+      description: one line of the site characterisation NDJSON stream
+    FailedResponse:
+      type: object
+      required:
+        - stack
+        - trace
+        - success
+        - error
+      properties:
+        error:
+          $ref: "#/components/schemas/FailedErrorEnum"
+        stack:
+          type: array
+          items:
+            $ref: "#/components/schemas/FailedErrorStack"
+        trace:
+          type: string
+          examples:
+            - please provide json data
+        success:
+          type: boolean
+      description: base model for failed requests
+    FailedErrorEnum:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          enum:
+            - ERR_VALIDATION
+            - ERR_UNAUTHORIZED
+            - ERR_FORBIDDEN
+            - ERR_NOT_FOUND
+            - ERR_INTERNAL
+          type: string
+          examples:
+            - ERR_VALIDATION
+        message:
+          enum:
+            - Invalid input data
+            - Unauthorized
+            - Forbidden
+            - Resource not found
+            - Internal server error
+          type: string
+          examples:
+            - Invalid input data
+      description: error enum for failed responses
+    FailedErrorStack:
+      type: object
+      required:
+        - message
+        - field
+        - row
+      properties:
+        row:
+          type: number
+          examples:
+            - 0
+        field:
+          type: string
+          examples:
+            - session_id
+        message:
+          type: string
+          examples:
+            - session_id is required
+      description: error stack entry for failed requests
+  responses:
+    No Auth:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FailedResponse"
+      description: The server encountered the client's request to an API that lacks valid
+        authentication credentials. This specifically means that the API key
+        provided is either missing, invalid, or does not grant the necessary
+        permissions to access the requested resource.
+    Bad Request:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FailedResponse"
+      description: The server could not understand the request due to invalid syntax.
+        The client should modify the request and try again.
+    Internal Server Error:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FailedResponse"
+      description: The server encountered an unexpected condition that prevented it
+        from fulfilling the request. Report the issue to the support team if it
+        persists.
+  parameters:
+    id:
+      in: query
+      name: id
+      style: form
+      schema:
+        type: string
+        examples:
+          - c6276049-3d5f-4396-933a-a0318b2b2e09
+      explode: true
+      required: false
+      description: "record id, sample: `c6276049-3d5f-4396-933a-a0318b2b2e09`"
+      allowReserved: false
+    session_id:
+      in: query
+      name: session_id
+      style: form
+      schema:
+        type: string
+        examples:
+          - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+      explode: true
+      required: true
+      description: active session identifier
+      allowReserved: false
+    project_id:
+      in: query
+      name: project_id
+      style: form
+      schema:
+        type: string
+        examples:
+          - c6276049-3d5f-4396-933a-a0318b2b2e09
+      explode: true
+      required: true
+      description: project identifier
+      allowReserved: false
+    document_id:
+      in: query
+      name: document_id
+      style: form
+      schema:
+        type: string
+        examples:
+          - d1234567-89ab-cdef-0123-456789abcdef
+      explode: true
+      required: true
+      description: document identifier
+      allowReserved: false
+    keywords:
+      in: query
+      name: keywords
+      style: form
+      schema:
+        type: string
+        examples:
+          - search term
+      explode: true
+      description: text string to search
+      allowReserved: false
+      allowEmptyValue: true
+    search_by:
+      in: query
+      name: search_by
+      style: form
+      schema:
+        type: string
+        examples:
+          - name
+      explode: true
+      description: field name to search on
+      allowReserved: false
+      allowEmptyValue: true
+    page_index:
+      in: query
+      name: page_index
+      style: form
+      schema:
+        type: integer
+        examples:
+          - 0
+      explode: true
+      required: false
+      description: zero-based page index for pagination
+      allowReserved: false
+    page_size:
+      in: query
+      name: page_size
+      style: form
+      schema:
+        type: integer
+        examples:
+          - 10
+      explode: true
+      required: false
+      description: number of records per page
+      allowReserved: false
+  securitySchemes:
+    Authorization:
+      in: header
+      name: Authorization
+      type: apiKey
+      description: 'Bearer token auth: include a valid JWT in the `"Authorization"` header.
+        Format: `Bearer <token>`'

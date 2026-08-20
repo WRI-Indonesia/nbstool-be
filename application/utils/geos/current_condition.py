@@ -8,7 +8,7 @@ import gc
 import time
 
 from ...utils.common import AppMessageException
-from ...utils.common import get_date
+from ...utils.common import get_date, sanitize_for_jsonb
 from . import GeoUtils
 
 from . import gcs
@@ -20,7 +20,7 @@ from .country_specific.thailand import Social as thailand_social
 from .country_specific.malaysia import Social as malaysia_social
 
 # libraries -begin-
-import os, shutil, pathlib, json, math, rasterio, geopandas as gpd, numpy as np, string, matplotlib, matplotlib.pyplot as plt, contextily as cx, pyproj
+import os, shutil, pathlib, json, math, rasterio, geopandas as gpd, numpy as np, string, matplotlib, matplotlib.pyplot as plt, contextily as cx, pyproj, zipfile
 matplotlib.use('agg')
 
 from http import HTTPStatus
@@ -36,6 +36,7 @@ from matplotlib_scalebar.scalebar import ScaleBar
 from geo_northarrow import add_north_arrow
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib.patches import Polygon as poly_patches
+from osgeo import gdal, ogr, osr  # must be imported before basemap to avoid DLL conflict on Windows
 from mpl_toolkits.basemap import Basemap
 
 from application.apis.geo_apis.utils import GeoLogic
@@ -149,6 +150,7 @@ tcl_classes_plain = {
 available_intervention_types = ["Avoided deforestation", "Ecosystem restoration"]
 
 temp_file_path = "temp_file/"
+session_prefix_path = 'session-file'
 # list of data sources, paths and static variables -end-
 
 # pre-fetch
@@ -184,6 +186,18 @@ prefetch()
 # general functions -begin-
 def remove_process_folder(session_id: str, section: str):
     user_folder = pathlib.Path(temp_file_path, session_id, section).resolve()
+
+    if os.path.isdir(user_folder):
+        filenames = next(os.walk(user_folder), (None, None, []))[2]  # [] if no file
+        zip_name = '{}.zip'.format(section)
+        zip_path = os.path.join(user_folder, zip_name)
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for fname in filenames:
+                if '.zip' in fname:
+                    continue
+                zf.write(os.path.join(user_folder, fname), arcname=fname, compress_type=zipfile.ZIP_DEFLATED)
+        
+        gcs.upload(os.path.join(user_folder, zip_name), destination=os.path.join(session_prefix_path, session_id, 'current-condition', zip_name))
 
     if os.path.isdir(user_folder):
         shutil.rmtree(user_folder)
@@ -1574,6 +1588,8 @@ def get_current_condition(session_id: str, section_type: str) -> dict:
         raise AppMessageException('fail, session id Not found')
         # return jsonify(status_code=HTTPStatus.NOT_FOUND, message="fail, session id Not found")
     
+    existing_session.assert_area_size()
+    
     geom = existing_session.geom.desc
     geom_gdf = construct_polygon(session_id)
 
@@ -1614,18 +1630,19 @@ def process_input_data_analyzer_result(session_id: str, section: str, data: dict
         check_existing_session = DataAnalyzer.find_by_session_id(session_id)
 
         if not check_existing_session:
+            safe_data = sanitize_for_jsonb(data)
             if section == "site_information":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, site_information=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, site_information=data, site_information_json=safe_data)
             elif section == "nature":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, nature=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, nature=data, nature_json=safe_data)
             elif section == "climate":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, climate=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, climate=data, climate_json=safe_data)
             elif section == "people":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, people=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, people=data, people_json=safe_data)
             elif section == "benefit":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, benefit=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, benefit=data, benefit_json=safe_data)
             elif section == "eligibility":
-                new_analyzer_result = DataAnalyzer(session_id=session_id, intervention_eligibility=data)
+                new_analyzer_result = DataAnalyzer(session_id=session_id, intervention_eligibility=data, intervention_eligibility_json=safe_data)
 
             db.session.add(new_analyzer_result)
             db.session.commit()
@@ -1634,18 +1651,25 @@ def process_input_data_analyzer_result(session_id: str, section: str, data: dict
         else:
             analyzer_result = DataAnalyzer.query.filter_by(session_id=session_id).first()
 
+            safe_data = sanitize_for_jsonb(data)
             if section == "site_information":
                 analyzer_result.site_information = data
+                analyzer_result.site_information_json = safe_data
             elif section == "nature":
                 analyzer_result.nature = data
+                analyzer_result.nature_json = safe_data
             elif section == "climate":
                 analyzer_result.climate = data
+                analyzer_result.climate_json = safe_data
             elif section == "people":
                 analyzer_result.people = data
+                analyzer_result.people_json = safe_data
             elif section == "benefit":
                 analyzer_result.benefit = data
+                analyzer_result.benefit_json = safe_data
             elif section == "eligibility":
                 analyzer_result.intervention_eligibility = data
+                analyzer_result.intervention_eligibility_json = safe_data
             
             db.session.commit()
 
@@ -1677,6 +1701,12 @@ def process_get_data_analyzer(session_id: str):
 # calculate intervention list -begin-
 def get_eligible_intervention(session_id: str) -> dict:
     aoi = construct_polygon(session_id)
+
+    known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+    if not known_polygons:
+        raise AppMessageException('fail, session id Not found')
+    
+    known_polygons.assert_area_size()
 
     ### Calculate forest end area
     clipped_fcc_path = pathlib.Path(temp_file_path, session_id, "eligibility", "clipped_fcc.tif").resolve()
@@ -1886,6 +1916,7 @@ def construct_project_area_map(session_id, geom):
 
     start_section_time = time.time()
     gcs.upload(os.path.join("generated-file", "project-area", filename))
+    gcs.upload(os.path.join("generated-file", "project-area", filename), destination=os.path.join(session_prefix_path, session_id, 'current-condition', 'project-area-map.jpg'))
     g_var.__print_list__.append("--- %s seconds --- gcs_upload results" % (time.time() - start_section_time))
 
     return user_folder

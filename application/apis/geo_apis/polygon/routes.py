@@ -12,14 +12,14 @@ from flask_cors import cross_origin
 import gc
 import uuid
 import json
-import geopandas as gpd
+# import geopandas as gpd  # off: only fed prefetch_cx_basemap
 
 from shapely.geometry import Polygon, MultiPolygon
 
 from ....utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ....utils.common import app_exception_handler, success_handler
 from ....utils.geos import GeoUtils
-from ....utils.geos.current_condition import prefetch_cx_basemap
+# from ....utils.geos.current_condition import prefetch_cx_basemap  # off: v2 current-condition
 
 from ..utils import GeoLogic
 from ...user_apis.utils import UserLogic
@@ -74,6 +74,11 @@ def geo_post_polygon():
         user_id = data.get('user_id') if data.get('user_id') else 0
         session_id = data.get('session_id')
         geom_type = data.get('geometry').get('type').lower()
+        is_debug = data.get('is_debug')
+
+        if is_debug:
+            raise AppMessageException('This is a general error for debugging')
+
         gdf = GeoUtils.construct_gdf(data)
 
         if geom_type == 'polygon':
@@ -128,17 +133,21 @@ def geo_post_polygon():
 
         db.session.add(known_polygons)
         db.session.commit()
+        db.session.refresh(known_polygons)
 
-        project_area = GeoLogic.calculate_project_area_db(known_polygons.session_id, user_id)
+        project_area = GeoLogic.calculate_project_area_db(known_polygons, user_id)
 
-        gdf4326 = gpd.GeoDataFrame(index=[0], crs='epsg:4326', geometry=[geom])
-        prefetch_cx_basemap(gdf4326)
+        # off: v2 current-condition basemap warm-up
+        # gdf4326 = gpd.GeoDataFrame(index=[0], crs='epsg:4326', geometry=[geom])
+        # prefetch_cx_basemap(gdf4326)
 
         results = {
             'session_id': known_polygons.session_id,
             'area_size': project_area.get('size'),
             'user_limit': project_area.get('limit'),
-            'exceed_size': project_area.get('exceed')
+            'exceed_size': project_area.get('exceed'),
+            'country': known_polygons.country,
+            'iso_3': known_polygons.iso_3
         }
 
         g_var.__description_data__['project_area'] = results.get('area_size')

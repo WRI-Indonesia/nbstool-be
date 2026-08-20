@@ -56,22 +56,31 @@ class GeoLogic():
         return project_area
     
     @staticmethod
-    def calculate_project_area_db(session_id, user_id):
+    def calculate_project_area_db(known_polygons, user_id):
         area_size = 0
-        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
-        if known_polygons:
-            geom = known_polygons.geom.desc
+        # known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+        # if known_polygons:
+        geom = known_polygons.geom.desc
 
-            query = '''
-            select 
-                project_area, district, province, country 
-            from sea.v1_current_condition_highlight_site_information_adm('{aoi_geom}')
-            '''.format(aoi_geom=geom)
+        query = '''
+        select 
+            project_area, district, province, country, iso_3
+        from sea.v3_adm('{aoi_geom}')
+        '''.format(aoi_geom=geom)
 
-            dt = GeoUtils.get_db(db.text(query))
+        dt = GeoUtils.get_db(db.text(query))
 
-            for row in dt:
-                area_size = round(row.get('project_area'), 2)
+        for row in dt:
+            area_size = round(row.get('project_area'), 2)
+
+            known_polygons.project_area_size = area_size
+            known_polygons.country = row.get('country')
+            known_polygons.province = row.get('province')
+            known_polygons.district = row.get('district')
+            known_polygons.iso_3 = row.get('iso_3')
+        
+        db.session.add(known_polygons)
+        db.session.commit()
 
         return GeoLogic.form_project_area_result(area_size, user_id)
     

@@ -13,6 +13,7 @@ from Crypto import Random
 from base64 import b64encode
 import ast
 import math
+from decimal import Decimal
 
 import os
 
@@ -94,3 +95,24 @@ def get_default_list_param(args):
 
 def allowed_image_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'jpg', 'jpeg', 'png', 'svg'}
+
+
+def sanitize_for_jsonb(obj):
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    
+    if isinstance(obj, Decimal):
+        f = float(obj)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
+    
+    if isinstance(obj, dict):
+        return {k: sanitize_for_jsonb(v) for k, v in obj.items()}
+    
+    if isinstance(obj, list):
+        return [sanitize_for_jsonb(v) for v in obj]
+    
+    return obj

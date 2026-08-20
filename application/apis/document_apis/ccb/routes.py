@@ -20,7 +20,7 @@ import json
 import base64
 
 from ....utils.common import AppMessageException, get_date, set_attr, get_default_list_param
-from ....utils.common import app_exception_handler, success_handler
+from ....utils.common import app_exception_handler, success_handler, sanitize_for_jsonb
 
 from ...geo_apis.utils import GeoLogic
 
@@ -85,18 +85,24 @@ def documents_update_document_data_ccb():
         else:
             known_document_list = DocumentList.find_by_project_id_and_document_type(project_id=session_id, document_type=document_type)
         
+        safe_data = sanitize_for_jsonb(data)
         if section == '1':
             known_document_data.section_1 = data
+            known_document_data.section_1_json = safe_data
         elif section == '2':
             known_document_data.section_2 = data
+            known_document_data.section_2_json = safe_data
         elif section == '3':
             known_document_data.section_3 = data
-            
+            known_document_data.section_3_json = safe_data
+
             GeoLogic.transform_ghg_data(known_document_data)
         elif section == '4':
             known_document_data.section_4 = data
+            known_document_data.section_4_json = safe_data
         elif section == '5':
             known_document_data.section_5 = data
+            known_document_data.section_5_json = safe_data
 
             GeoLogic.summarize_fauna(known_document_data)
 
