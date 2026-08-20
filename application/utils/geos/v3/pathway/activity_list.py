@@ -138,3 +138,26 @@ def analyze_activity_list(aoi: AOI) -> ComponentResult:
         },
         flags=flags,
     )
+
+
+if __name__ == "__main__":
+    # Run this component on its own, no Flask app and no database:
+    #     python activity_list.py [aoi path]
+    import json
+    import os
+    import sys
+
+    import geopandas as gpd
+
+    try:
+        from common import prepare_aoi, to_jsonable
+    except ImportError:
+        from ..common import prepare_aoi, to_jsonable
+
+    aoi_path = sys.argv[1] if len(sys.argv) > 1 else r"D:\Documents\ALL\_test\nbs\AOI1.shp"
+    if aoi_path.lower().endswith(".zip"):
+        aoi_path = "zip://" + os.path.abspath(aoi_path).replace("\\", "/")
+
+    aoi = prepare_aoi(gpd.read_file(aoi_path))
+    print(f"AOI: {aoi.area_ha:,.0f} ha, supplied in {aoi.source_crs}\n")
+    print(json.dumps(to_jsonable(analyze_activity_list(aoi)), indent=2, ensure_ascii=False))

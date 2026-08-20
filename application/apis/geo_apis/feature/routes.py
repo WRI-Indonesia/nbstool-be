@@ -33,6 +33,7 @@ from ....utils.geos.v3.site_characterisation.run_site_characterisation import (
     COMPONENTS,
     stream_site_characterisation,
 )
+from ....utils.geos.v3.threat.run_threat import SECTIONS, stream_threat
 
 from ..utils import GeoLogic
 
@@ -327,6 +328,62 @@ def geo_feature_site_characterisation():
 
     return Response(
         stream_with_context(lines),
+        mimetype='application/x-ndjson',
+    )
+
+
+# v3: F02-P3 Threat. The Threat Profile screen: four tabs, one NDJSON line each.
+#
+# STREAMED, and with the SAME ENVELOPE as site-characterisation rather than pathway's single JSON
+# document. The four sections are the four tabs, the user lands on Overview, and Overview is the
+# cheapest of them (two rasters against twelve for the whole profile) -- so it can be drawn while
+# the rest are still reading. It also inherits `error_status` and `retry_url` per tab, which a
+# single document has nowhere to put.
+#
+# IT DOES TAKE A SLOT FROM _SITECHAR_SLOTS, unlike pathway. Twelve rasters and a vector distance
+# over a 1.28 GB canal layer is the same order of memory as a characterisation run, not a fraction
+# of it, so it queues with them rather than past them.
+@geo_apis_blueprint.route('/feature/threat', methods=['GET'])
+@cross_origin()
+def geo_feature_threat():
+    g_var.__api_name__ = 'geo_feature_threat'
+
+    try:
+        session_id = request.args.get('session_id')
+
+        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+
+        if not known_polygons:
+            raise AppMessageException('fail, session id Not found')
+
+        known_polygons.assert_area_size()
+
+        # None means every tab. A typo has to 400 here rather than silently emitting a shorter
+        # plan, for the same reason as site-characterisation: once the stream opens the status is
+        # 200 and a client would read the missing line as a tab that never arrived.
+        wanted = request.args.getlist('process') or None
+        if wanted:
+            unknown = [name for name in wanted if name not in SECTIONS]
+            if unknown:
+                raise AppMessageException(
+                    f"fail, unknown process: {', '.join(unknown)}")
+
+        aoi = prepare_aoi_from_session(session_id)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+    # Relative for the same reason as site-characterisation: `request.url_root` behind a proxy is
+    # the internal host, and `script_root` follows a mount prefix on its own. Resolve it client
+    # side against the URL you called.
+    path = request.script_root + request.path
+
+    def retry_url(process):
+        return f"{path}?{urlencode({'session_id': session_id, 'process': process})}"
+
+    return Response(
+        stream_with_context(_limit_slots(stream_threat(aoi, wanted, retry_url))),
         mimetype='application/x-ndjson',
     )
 

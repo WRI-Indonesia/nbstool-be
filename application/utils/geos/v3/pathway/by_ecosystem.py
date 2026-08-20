@@ -180,3 +180,32 @@ def analyze_by_ecosystem(aoi, results) -> "ComponentResult":
         },
         flags=flags,
     )
+
+
+if __name__ == "__main__":
+    # Run this component on its own, no Flask app and no database:
+    #     python by_ecosystem.py [aoi path]
+    #
+    # 4.3 recomputes nothing: it re-aggregates 4.2, so 4.2 has to run first even standalone.
+    import json
+    import os
+    import sys
+
+    import geopandas as gpd
+
+    try:
+        from activity_list import analyze_activity_list
+        from common import prepare_aoi, to_jsonable
+    except ImportError:
+        from ..common import prepare_aoi, to_jsonable
+        from .activity_list import analyze_activity_list
+
+    aoi_path = sys.argv[1] if len(sys.argv) > 1 else r"D:\Documents\ALL\_test\nbs\AOI1.shp"
+    if aoi_path.lower().endswith(".zip"):
+        aoi_path = "zip://" + os.path.abspath(aoi_path).replace("\\", "/")
+
+    aoi = prepare_aoi(gpd.read_file(aoi_path))
+    print(f"AOI: {aoi.area_ha:,.0f} ha, supplied in {aoi.source_crs}\n")
+    _results = {"4.2": analyze_activity_list(aoi)}
+    print(json.dumps(to_jsonable(analyze_by_ecosystem(aoi, _results)), indent=2,
+                     ensure_ascii=False))

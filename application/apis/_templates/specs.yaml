@@ -1028,6 +1028,63 @@ paths:
       description: get current condition analysis results for a specific section
       operationId: getCurrentCondition
 
+  /geos/feature/threat:
+    get:
+      tags:
+        - Geo module
+      summary: get threat profile
+      responses:
+        "200":
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/ThreatLine"
+          description: >-
+            A stream of newline-delimited JSON objects, NOT a single JSON
+            document -- the same envelope as
+            `/geos/feature/site-characterisation`, so a client parses it with
+            the code it already has. Six lines: `preparation`, one per tab,
+            then `end`.
+
+            STREAMED RATHER THAN RETURNED WHOLE because the four sections map
+            one-to-one onto the four tabs and the user lands on Overview.
+            Overview is also the cheapest section (two rasters), so it can be
+            drawn while Forest, Mangrove and Peatland are still reading. The
+            whole profile touches twelve rasters; a single document would make
+            the first tab wait for the last one.
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - name: process
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [all ecosystems, dryland forest, mangrove, peatland]
+          style: form
+          explode: true
+          description: >-
+            re-run only these sections. Same retry contract as
+            site-characterisation: a failed line carries
+            `error_status.retry_url` ready to request.
+      description: >-
+        F02-P3 Threat Profile. Where the project area is most disturbed and
+        what is driving it, across the three ecosystems.
+
+        ECOSYSTEM BUCKETS ARE NOT THE SAME AS F02-P4's. This endpoint reads
+        `threat/ecosystem_v3.tif`, whose Dryland class ALREADY INCLUDES
+        SAVANNA -- verified against the pathway raster, where 100% of the
+        savanna pixels fall in this layer's Dryland class. Its fourth class is
+        `Other` (not an ecosystem), where the pathway raster's fourth class is
+        Savanna. So the two layers disagree on totals for the same AOI and
+        their areas must not be mixed; see `total_area_ha` below.
+      operationId: getThreat
+
   /geos/feature/pathway:
     get:
       tags:
@@ -2737,6 +2794,220 @@ components:
           examples:
             - 1
       description: activity log entry
+    ThreatLine:
+      type: object
+      description: >-
+        One line of the threat stream. Identical envelope to
+        `SiteCharacterisationLine`; only `process` and `data` differ.
+      properties:
+        process:
+          type: string
+          enum: [preparation, all ecosystems, dryland forest, mangrove, peatland, end]
+          description: >-
+            which tab this line fills. `all ecosystems` is the Overview tab,
+            `dryland forest` is the Forest tab.
+        data:
+          description: >-
+            the section payload -- ThreatOverview, ThreatForest,
+            ThreatMangrove or ThreatPeatland by `process`. `{}` on
+            `preparation` (which carries the plan) and on `end`.
+          oneOf:
+            - $ref: "#/components/schemas/ThreatOverview"
+            - $ref: "#/components/schemas/ThreatForest"
+            - $ref: "#/components/schemas/ThreatMangrove"
+            - $ref: "#/components/schemas/ThreatPeatland"
+        error_status:
+          type:
+            - object
+            - "null"
+          description: >-
+            EXACTLY the `error_status` of `SiteCharacterisationLine` -- same
+            two states (`partial` = retryable, `failed` = this is the answer),
+            same `retryable`, `retry_url` and `messages` fields. Null when the
+            section ran clean. Handle it with the code that already reads the
+            characterisation stream.
+        w: {type: number, description: total weight of this run}
+        a: {type: number, description: weight of this line}
+        next: {type: string, nullable: true}
+
+    ThreatOverview:
+      type: object
+      description: the Overview tab. Screening summary across all three ecosystems.
+      properties:
+        total_ecosystem_area_ha:
+          type: number
+          description: >-
+            the three ecosystems combined, and the denominator for
+            `percentage_total`. NOT the project area: land that is none of the
+            three is simply not counted, and that shortfall shows up in
+            `total_ecosystem_percentage`.
+
+            THIS TAB CARRIES NO DISTURBED FIGURES. Section 3.1 measures
+            disturbance as `ecosystem AND disturbed`, while the three
+            per-ecosystem tabs measure `ecosystem AND still-forest AND
+            disturbed` -- on the data team's own run those differ by up to
+            2600x for the same ecosystem. THE PER-TAB DEFINITION IS THE ONE TO
+            DISPLAY -- confirmed by the data team 2026-08-19 -- so fill each
+            card's disturbed figure, and the "Total Disturbed area" headline,
+            by summing the `dryland forest`, `mangrove` and `peatland` lines
+            when they arrive. Overview is not
+            made to wait for them: it is the landing tab and the cheapest
+            section.
+
+            The Peat forest / Peat non-forest split bar comes from the same
+            place -- the `peatland` line's `remaining_forest_ha` against its
+            `total_area_ha`.
+        total_ecosystem_percentage:
+          type: number
+          description: total ecosystem area as a share of the PROJECT area.
+        ecosystems:
+          type: array
+          description: always three, in the order Dryland, Mangrove, Peatland.
+          items:
+            $ref: "#/components/schemas/ThreatEcosystemSummary"
+
+    ThreatEcosystemSummary:
+      type: object
+      description: one card on the Overview tab.
+      properties:
+        ecosystem:
+          type: string
+          enum: [Dryland, Mangrove, Peatland]
+          description: >-
+            analysis key. DRYLAND INCLUDES SAVANNA -- the source layer does not
+            separate them.
+        label:
+          type: string
+          description: >-
+            what the card prints -- "Dryland forest", "Mangrove", "Peatland".
+            Differs from `ecosystem` for Dryland: the source layer calls the
+            class "Dryland", the design calls the card "Dryland forest".
+        area_ha: {type: number}
+        percentage_total:
+          type: number
+          description: >-
+            share of `total_ecosystem_area_ha`. The three ALWAYS sum to 100 --
+            only three classes are screened and there is no residual class.
+
+    ThreatDrivers:
+      type: object
+      description: >-
+        What is driving the disturbance, in the three groups the design shows.
+        PRESENCE ONLY -- each list is driver names that occur in the AOI, with
+        no area and no ranking, because the source computes none.
+      properties:
+        non_natural:
+          type: array
+          items: {type: string}
+          description: >-
+            human-caused. Dryland vocabulary: Small-scale agriculture,
+            Small-scale agriculture (fire), Large-scale agriculture,
+            Large-scale agriculture (fire), Road development, Selective
+            logging, Mining. Mangrove vocabulary: Commodities, Settlement.
+        natural:
+          type: array
+          items: {type: string}
+          description: >-
+            Flooding, Forest fire, Landslide, Extreme climate event. The design
+            also lists Drought and Typhoon; no layer supplies them today.
+        other:
+          type: array
+          items: {type: string}
+          description: Non-productive conversion, Unknown.
+
+    ThreatForest:
+      type: object
+      description: the Forest tab. Dryland forest, which includes savanna.
+      properties:
+        total_area_ha: {type: number}
+        remaining_forest_ha: {type: number}
+        remaining_forest_percentage: {type: number}
+        disturbed_area_ha: {type: number}
+        disturbed_percentage: {type: number}
+        forest_loss_ha: {type: number}
+        forest_loss_percentage: {type: number}
+        forest_gain_ha: {type: number}
+        forest_gain_percentage: {type: number}
+        period:
+          type: object
+          description: the years the disturbance record covers, for the narrative.
+          properties:
+            from: {type: integer}
+            to: {type: integer}
+        drivers:
+          $ref: "#/components/schemas/ThreatDrivers"
+
+    ThreatMangrove:
+      type: object
+      description: the Mangrove tab.
+      properties:
+        total_area_ha: {type: number}
+        remaining_forest_ha: {type: number}
+        remaining_forest_percentage: {type: number}
+        disturbed_area_ha: {type: number}
+        disturbed_percentage: {type: number}
+        main_pressure:
+          type: string
+          enum: [Commodities, Settlement, Commodities and Settlement, Not identified]
+          description: >-
+            the headline driver the card prints -- the larger of Commodities and
+            Settlement BY AREA, both when they tie above zero, and the literal
+            string "Not identified" (never null) when neither occurs. This is
+            the only place in F02-P3 that ranks drivers by area; the Forest tab
+            has no equivalent.
+        period:
+          type: object
+          properties:
+            from: {type: integer}
+            to: {type: integer}
+        drivers:
+          $ref: "#/components/schemas/ThreatDrivers"
+
+    ThreatPeatland:
+      type: object
+      description: >-
+        the Peatland tab. Note this tab reports CONVERTED / LOSS where the
+        Forest tab reports forest loss and gain, and replaces the driver lists
+        with three hydrological indicators.
+      properties:
+        total_area_ha: {type: number}
+        remaining_forest_ha: {type: number}
+        remaining_forest_percentage: {type: number}
+        disturbed_area_ha: {type: number}
+        disturbed_percentage: {type: number}
+        converted_loss_ha: {type: number}
+        converted_loss_percentage: {type: number}
+        canal_proximity:
+          type: string
+          enum: [High, Medium, Low, Not identified]
+          description: >-
+            from `canal_distance_m`: High at or under 500 m, Medium to 1 km, Low
+            beyond. "Not identified" when the AOI holds no current peat forest
+            to measure from; "Low" also covers the case where no canal is found
+            at all.
+        canal_distance_m:
+          type: number
+          nullable: true
+          description: >-
+            metres to the nearest drainage canal, INCLUDING canals outside the
+            project boundary -- they influence the water table up to 500 m and
+            biomass growth up to 1 km, which is where the grades above come
+            from. Null whenever no distance could be measured, including the
+            "Low, no canal found" case. Measured as a VECTOR distance in the
+            AOI's own UTM zone, not a raster one.
+        drainage_pressure:
+          type: string
+          enum: [High, Medium, Low, Not identified]
+          description: >-
+            highest canal-density class present in the peatland, from
+            `peat_canals_density_v3.tif` (3 High, 2 Medium, 1 Low).
+        fire_risk:
+          type: string
+          enum: [High, Medium, Low, Very low, No risk]
+          description: >-
+            highest fire-risk class present in the peatland. FIVE levels, not
+            three -- wider than the other two indicators.
+
     PathwaySelection:
       type: object
       description: >-

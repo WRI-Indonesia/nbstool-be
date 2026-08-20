@@ -299,19 +299,42 @@ def plan(wanted: list[str] | None) -> list[dict]:
     return [processes[0]] + [p for p in processes[1:-1] if p['name'] in asked] + [processes[-1]]
 
 
+# WIDER THAN THIS BUYS NOTHING AND COSTS A LOT. Habitat area alone takes ~21.9 s; the other 24
+# components sum to ~69 s, which six workers clear behind it, so the wall clock floor is the same at
+# 6 as at 25. Measured over six runs each, same AOI, back to back:
+#
+#     workers   wall median   wall range      added RSS   GIS connections
+#     1         37.4 s        (one sample)    130 MB      1
+#     6         15.6 s        15.1 - 17.5     180 MB      3
+#     25        23.3 s        13.0 - 31.6     323 MB      4
+#
+# 25 has the better BEST case and a worst case twice as bad: it sits on a contention cliff between
+# the network, the GIL and GDAL's caches and falls off it about half the time. Six is 33% faster on
+# the median with the spread collapsed from 18.6 s to 2.4 s, on 44% less memory -- and per-run
+# memory is what decides how many runs an instance can hold.
+_MAX_WORKERS = 6
+
+
 def _run_components(aoi: AOI, wanted: list[str] | None = None):
     """Run the requested components and their dependencies concurrently, yielding
     `(view_results, error_status)` for each REQUESTED one in emission order.
 
-    The pool is sized for everything running at once, not for a fixed 25. That is a correctness
-    requirement, not a saving: four components park a worker on another's future through
-    `pipeline.after`, and a waiter holding the last thread would deadlock the pair. It also means a
-    one-component retry spawns one thread rather than twenty-five.
+    THE POOL DOES NOT HAVE TO FIT EVERY COMPONENT, and an earlier version of this docstring claimed
+    it did. The worry was real but misdiagnosed: four components park a worker on another's future
+    through `pipeline.after`, so a waiter holding the last thread could in principle deadlock the
+    pair. It cannot happen HERE, because submission is topologically ordered -- asserted at import,
+    see `_ORDER` -- and `ThreadPoolExecutor`'s queue is strictly FIFO. A dependency is therefore
+    always dequeued before its dependent, so it already holds a worker by the time the dependent
+    blocks on its result. That holds at any width down to one, and was checked: six runs at width 6
+    and one at width 1, all producing identical output with no hang.
+
+    `min` keeps a retry cheap: asking for one component still spawns one thread, not six.
     """
     running = resolve(wanted)
     emitted = [p['name'] for p in plan(wanted)[1:-1]]
 
-    with ThreadPoolExecutor(max_workers=len(running), thread_name_prefix='sitechar') as pool:
+    with ThreadPoolExecutor(max_workers=min(len(running), _MAX_WORKERS),
+                            thread_name_prefix='sitechar') as pool:
         futures: dict[str, object] = {}
         for name in running:
             fn, deps = COMPONENTS[name]

@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from collections import Counter
 
+from sqlalchemy.exc import ProgrammingError
+
 try:
     from ...config import (
         COUNTRY_ISO3,
@@ -293,10 +295,26 @@ def analyze_social_statistics(aoi, admin_values: dict | None = None) -> tuple[di
 
             # One candidate for every country but the Philippines, where the loop stops at the
             # first regional vintage this table recognises.
-            for area_name in names:
-                year, rows = load_social_rows(iso3, spec['table'], level, area_name, spec['where'])
-                if rows:
-                    break
+            #
+            # A TABLE THE CATALOG NAMES AND THE DATABASE DOES NOT HAVE IS AN ANSWER, NOT A FAULT.
+            # Unguarded, the UndefinedTable propagates out of the whole component: 6.3 crashes, all
+            # six sections are lost rather than the one field, and the wire reports `partial` with a
+            # retry button that can never succeed. It is not hypothetical -- `phl_population_educated`
+            # and `phl_students_enrolled` were withdrawn once already. So it is caught and reported
+            # like any other absence, and the rest of the section still fills.
+            #
+            # ProgrammingError rather than UndefinedTable alone, because a renamed COLUMN is the same
+            # class of permanent schema fact and would otherwise still take the component down.
+            try:
+                for area_name in names:
+                    year, rows = load_social_rows(iso3, spec['table'], level, area_name,
+                                                  spec['where'])
+                    if rows:
+                        break
+            except ProgrammingError:
+                payload[field] = None
+                missing[field] = f"{iso3}_{spec['table']} is not in the database."
+                continue
 
             payload[field] = _read(rows, spec['read'], tuple(spec['exclude']))
             # The year belongs with the number. It is not always the same across a section -- see

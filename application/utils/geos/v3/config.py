@@ -107,6 +107,111 @@ PATHWAY_CATCODE_TO_PATHWAY = {
 # soil_class_lookup.csv, so it is read through settings.layer_path and not vendored in the repo.
 ACTIVITY_TABLE = "canonical_v3_activities.csv"
 
+# ============================ F02-P3 THREAT ============================
+# Twelve rasters, ALL UNDER THE `threat/` PREFIX, and the prefix is load-bearing. Four of these
+# filenames also exist at the v3 root as DIFFERENT, MUCH SMALLER PRODUCTS -- `risk_fire_v3.tif` is
+# under 10 MB at the root (what 1.7 and 3.5 read) against 0.44 GB here, and flood, landslide and
+# storm collide the same way. Dropping the prefix resolves silently to the wrong layer.
+THREAT_ECOSYSTEM = "threat/ecosystem_v3.tif"
+THREAT_HISTORICAL = "threat/historical_deforestation_v3.tif"
+THREAT_FOREST_2024 = "threat/forest_2024_v3.tif"
+THREAT_DISTURBANCE = "threat/forest_disturbance_v3.tif"
+THREAT_FOREST_GAIN = "threat/forest_gain_v3.tif"
+THREAT_DRIVERS = "threat/drivers_disturbance_v3.tif"
+THREAT_FLOOD_RISK = "threat/risk_flood_v3.tif"
+THREAT_LANDSLIDE_RISK = "threat/risk_landslide_v3.tif"
+THREAT_STORM_RISK = "threat/risk_storm_v3.tif"
+THREAT_FIRE_RISK = "threat/risk_fire_v3.tif"
+THREAT_PEAT_CANALS_DENSITY = "threat/peat_canals_density_v3.tif"
+THREAT_PEAT_CANAL = "threat/peat_canal.tif"
+
+# `ecosystem_v3.tif`. NOT the pathway raster's band 2, and the two DISAGREE for the same AOI --
+# 66,601 ha of dryland on AOI1 there against 67,506 ha here. Two differences matter:
+#   - class 1 HERE ALREADY INCLUDES SAVANNA. Verified against the pathway raster on a Thai AOI:
+#     100% of its savanna pixels (28,672 ha) land in class 1. So no folding is needed, unlike
+#     F02-P4 where savanna is its own code that `by_ecosystem` folds into Dryland.
+#   - class 4 is "Other" here and Savanna there. Same number, different meaning.
+# Threat areas and pathway areas must therefore never be mixed in one figure.
+# THREE CLASSES, NOT FOUR. The notebook's config defines this dict twice -- four classes including
+# "Other" beside the threat rasters, then three classes further down -- and the LATER one wins, so
+# the notebook as actually run screens on 1/2/3 only and never reports Other. Matching the run was
+# chosen over matching the documented 4-class version (team decision 2026-08-18), which also makes
+# this port byte-identical to the notebook's own saved output.
+#
+# Consequence: `total_ecosystem_area_ha` EXCLUDES land that is none of the three, so the three
+# cards sum to exactly 100% of it, and the shortfall against the project area shows up in
+# `total_ecosystem_percentage` rather than in an Other row.
+THREAT_ECOSYSTEM_CLASSES = {
+    1: "Dryland",
+    2: "Mangrove",
+    3: "Peatland",
+}
+
+# The class labels above are the notebook's and are what the analysis keys on. The design prints
+# "Dryland forest" on the Overview card, so the two are kept apart -- same split as F02-P4's
+# ECOSYSTEM_DISPLAY_NAMES.
+THREAT_ECOSYSTEM_DISPLAY_NAMES = {
+    "Dryland": "Dryland forest",
+    "Mangrove": "Mangrove",
+    "Peatland": "Peatland",
+}
+
+THREAT_DRYLAND = 1
+THREAT_MANGROVE = 2
+THREAT_PEATLAND = 3
+
+# `historical_deforestation_v3.tif`
+THREAT_REMAINING_FOREST = 1
+THREAT_FOREST_LOSS = 2
+# `forest_2024_v3.tif`
+THREAT_CURRENT_FOREST = 1
+# `forest_gain_v3.tif`
+THREAT_FOREST_GAIN_VALUE = 1
+# `forest_disturbance_v3.tif`: ANY value > 0 is disturbed.
+THREAT_DISTURBANCE_THRESHOLD = 0
+
+# `drivers_disturbance_v3.tif`. The notebook documents 1..11; only 1..8 are named, and 10 is Forest
+# fire via THREAT_NATURAL_DRIVERS below. Codes 9 and 11 fall through to "Unknown".
+THREAT_FOREST_DRIVER_CLASSES = {
+    1: "Small-scale agriculture",
+    2: "Small-scale agriculture (fire)",
+    3: "Large-scale agriculture",
+    4: "Large-scale agriculture (fire)",
+    5: "Road development",
+    6: "Selective logging",
+    7: "Mining",
+    8: "Non-productive conversion",
+}
+
+# Natural drivers come from the DISASTER RISK rasters, not from the driver raster, except forest
+# fire. The values are the raster values that count as a risk.
+#
+# THE DESIGN ALSO LISTS DROUGHT AND TYPHOON. No layer supplies either, so they can never appear.
+# The `raster` key spells it the notebook's way on purpose: 3.2's body reads `config["raster"]`, and
+# renaming it here would mean editing that body. The value is a LAYER NAME, resolved by
+# settings.layer_path inside each section's own reader.
+THREAT_NATURAL_DRIVERS = {
+    "Flooding": {"raster": THREAT_FLOOD_RISK, "values": [4]},
+    "Forest fire": {"raster": THREAT_DRIVERS, "values": [10]},
+    "Landslide": {"raster": THREAT_LANDSLIDE_RISK, "values": [4]},
+    "Extreme climate event": {"raster": THREAT_STORM_RISK, "values": [4]},
+}
+
+# Mangrove reads the same driver raster but collapses it: 1-4 are one "Commodities" pressure.
+THREAT_COMMODITY_CLASSES = [1, 2, 3, 4]
+THREAT_SETTLEMENT_CLASS = 5
+THREAT_STORM_RISK_CLASSES = [4, 5]
+
+# The notebook computes pixel area GEODESICALLY on the WGS84 ellipsoid, row by row, because these
+# rasters stay in EPSG:4326 rather than being reprojected to REFERENCE_CRS. Same deliberate
+# exception as 2.3, 2.6 and burned area: the area maths is derived from the 4326 transform.
+THREAT_GEOD_ELLPS = "WGS84"
+
+# The years the disturbance record covers, for the narrative "From 2015 to 2024, ...". Not derived
+# from the raster -- it carries no time dimension -- so it is stated here.
+THREAT_PERIOD_FROM = 2015
+THREAT_PERIOD_TO = 2024
+
 # ---- Pathway Selection screen (F02-P4 endpoint) ---------------------------------------------
 # 4.3 groups into Dryland / Mangrove / Peatland. The design calls the first one "Forest", so the
 # payload carries both: `ecosystem` is the analysis key, `label` is what the card prints.
