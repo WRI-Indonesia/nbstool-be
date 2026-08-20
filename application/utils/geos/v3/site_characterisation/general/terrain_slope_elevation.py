@@ -106,7 +106,7 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
         )
         results = {'narrative': empty.narrative, 'tables': {'slope': [], 'elevation': []},
                    'values': {}, 'flags': empty.flags, 'missing': empty.missing}
-        view_results = {'slopes': [], 'min_elevation_dict': None, 'max_elevation_dict': None,
+        view_results = {'slopes': [], 'min_elevation': None, 'max_elevation': None,
                         'predominant_elevation_dict': None}
         return results, view_results
 
@@ -120,12 +120,13 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
     dom_slope = dominant(slope_rows)
     dom_elev = dominant(elev_rows)
 
+    # Min and max in actual metres, from the continuous elevation raster (the class raster
+    # cannot give metres). elev_c.values is masked, so min and max ignore nodata.
+    vmin = int(round(float(elev_c.values.min())))
+    vmax = int(round(float(elev_c.values.max())))
+
     elev_clause = ""
     if dom_elev:
-        # Min and max in actual metres, from the continuous elevation raster (the class raster
-        # cannot give metres). elev_c.values is masked, so min and max ignore nodata.
-        vmin = int(round(float(elev_c.values.min())))
-        vmax = int(round(float(elev_c.values.max())))
         # Flat AOI (a single elevation value): avoid "ranges from 12 to 12 m".
         elev_clause = (
             f"Elevation is {vmin} m above sea level (asl), predominantly {dom_elev.label}."
@@ -145,17 +146,6 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
         'flags': [],
     }
 
-    # The card names a range, so it needs the lowest and highest class present, which the
-    # notebook computes inline for the narrative only.
-    present = sorted(r.code for r in elev_rows if r.area_ha > 0)
-    min_elev = present[0] if present else None
-    max_elev = present[-1] if present else None
-
-    # The contract carries only the three {key, fallback} dicts, so the metre figures the
-    # narrative quotes are NOT emitted. They stay in `results['narrative']`, which means the card
-    # can read "Lowland to Montane" while the sentence says "42 to 1408 m". That is the contract's
-    # choice, not a defect: metres are not a translation key.
-
     view_results = {
         'slopes': [
             {
@@ -167,8 +157,9 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
             }
             for row in slope_rows
         ],
-        'min_elevation_dict': _elevation_dict(min_elev),
-        'max_elevation_dict': _elevation_dict(max_elev),
+        # Exact metres from the continuous DEM, the same figures the narrative quotes.
+        'min_elevation': vmin,
+        'max_elevation': vmax,
         'predominant_elevation_dict': _elevation_dict(dom_elev.code if dom_elev else None),
     }
 
