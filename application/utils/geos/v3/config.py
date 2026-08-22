@@ -397,8 +397,11 @@ ELEVATION_KEYS = {
     4: "elevation_upper_montane",
 }
 
-RISK_KEYS = {1: "risk_very_low", 2: "risk_low", 3: "risk_moderate", 4: "risk_high"}
-RISK_NO_DATA_KEY = "risk_no_data"
+# The frontend's six-key risk vocabulary (2026-08-22). Code 5 cannot occur while the risk
+# rasters carry 1..4 (see RISK_LEVELS); it is listed so a genuine fifth class would label
+# rather than emit a null key.
+RISK_KEYS = {1: "very_low", 2: "low", 3: "moderate", 4: "high", 5: "very_high"}
+RISK_NO_DATA_KEY = "no_risk"
 
 # 1.8. One key per RLCMS class, plus the No-data / other row that 1.8 appends as code 0.
 LAND_COVER_KEYS = {

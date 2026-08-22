@@ -175,7 +175,7 @@ def analyze_natural_risk(aoi: AOI) -> tuple[dict, dict]:
         field: (
             {'key': RISK_KEYS.get(leveled[risk].level_code), 'fallback': leveled[risk].level_label}
             if risk in leveled
-            else {'key': RISK_NO_DATA_KEY, 'fallback': "No data"}
+            else {'key': RISK_NO_DATA_KEY, 'fallback': "No risk"}
         )
         for risk, field in FE_RISK_FIELDS.items()
     }

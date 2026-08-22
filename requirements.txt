@@ -108,8 +108,8 @@ proto-plus==1.24.0
 protobuf==5.27.3
 # psutil==6.0.0  # unused, off with v2 current-condition/benefit
 psycopg2-binary==2.9.9
-# pyarrow==17.0.0  # unused, off with v2 current-condition/benefit
-# pyarrow-hotfix==0.6  # unused, off with v2 current-condition/benefit
+pyarrow==17.0.0  # v3 2.3 habitat area: gpd.read_parquet of the species inventory needs it
+# pyarrow-hotfix==0.6  # unused, off with v2 current-condition/benefit (pyarrow >= 14.0.1 doesn't need it)
 pyasn1==0.6.0
 pyasn1_modules==0.4.0
 pycparser==2.22
