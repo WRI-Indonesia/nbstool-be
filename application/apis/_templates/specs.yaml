@@ -1563,7 +1563,7 @@ paths:
 
         Besides marking the session as a project, this SEEDS the feasibility
         form draft with the analyser prefill (see
-        `/documents/feasibility/v3/form`) so the F03 form and the docx
+        `GET /documents/feasibility/v3`) so the F03 form and the docx
         template have their initial data from the moment the session becomes
         a project. A draft the user already saved is never overwritten.
 
@@ -1956,90 +1956,6 @@ paths:
         required: true
 
   /documents/feasibility/v3:
-    post:
-      tags:
-        - Document module
-      summary: generate v3 feasibility document
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                type: object
-                title: FeasibilityV3Ok
-                required:
-                  - result
-                properties:
-                  result:
-                    type: object
-                    required:
-                      - document_id
-                      - document_name
-                    properties:
-                      document_id:
-                        type: string
-                        examples:
-                          - d1234567-89ab-cdef-0123-456789abcdef
-                      document_name:
-                        type: string
-                        examples:
-                          - b06e52c5-694d-4890-9a0e-ae9e4a581da5-20260823101500-feasibility.docx
-          description: Success
-        "400":
-          $ref: "#/components/responses/Bad Request"
-        "500":
-          $ref: "#/components/responses/Internal Server Error"
-      parameters: []
-      description: >-
-        F03. Generate the feasibility study DOCX from the doc team's template,
-        filled with the session's persisted v3 analysis results
-        (site-characterisation, threat, pathway), the stored socio-economic
-        form draft and any user-input overrides.
-
-        Data precedence per field: this request's payload, then the stored
-        draft (see `/documents/feasibility/v3/form`), then the analyser
-        prefill. Generating from a PARTIAL form is allowed by design -- any
-        template tag with no value renders as its literal bracket text (for
-        example `[User input: Telephone]`), visible in the output for manual
-        fill.
-
-        The generated file is uploaded to storage and registered as a
-        `FeasibilityV3` document; download it through
-        `/documents/download/docx` with the returned `document_id`.
-      operationId: generateFeasibilityV3
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - session_id
-              properties:
-                session_id:
-                  type: string
-                  examples:
-                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
-                form:
-                  type: object
-                  description: >-
-                    freshest F03 socio-economic answers, keyed by the form's
-                    field names (se*). Optional -- anything omitted falls back
-                    to the stored draft.
-                  examples:
-                    - seHouseholds: "3140"
-                      seIncome: "3200000"
-                user_input:
-                  type: object
-                  description: >-
-                    free overrides keyed by template tag text. A bare key fills
-                    `[User input: <key>]`; a full "Category: name" key
-                    overrides any tag.
-                  examples:
-                    - Project Proponent: Yayasan Lestari
-                      DD-Month-Year: 23-August-2026
-        required: true
-
-  /documents/feasibility/v3/form:
     get:
       tags:
         - Document module
@@ -2050,7 +1966,7 @@ paths:
             application/json:
               schema:
                 type: object
-                title: GetFeasibilityV3FormOk
+                title: GetFeasibilityV3Ok
                 required:
                   - result
                 properties:
@@ -2084,18 +2000,18 @@ paths:
         regional figure is an honest starting point (household count, average
         household income); the user is expected to correct them from local
         knowledge.
-      operationId: getFeasibilityV3Form
+      operationId: getFeasibilityV3
     post:
       tags:
         - Document module
-      summary: save feasibility form draft
+      summary: save feasibility form / generate document
       responses:
         "200":
           content:
             application/json:
               schema:
                 type: object
-                title: SaveFeasibilityV3FormOk
+                title: FeasibilityV3Ok
                 required:
                   - result
                 properties:
@@ -2106,8 +2022,20 @@ paths:
                     properties:
                       message:
                         type: string
+                        description: '`saved` on a pure save, `generated` when a document was produced'
                         examples:
                           - saved
+                          - generated
+                      document_id:
+                        type: string
+                        description: present only when `generate` was true
+                        examples:
+                          - d1234567-89ab-cdef-0123-456789abcdef
+                      document_name:
+                        type: string
+                        description: present only when `generate` was true
+                        examples:
+                          - b06e52c5-694d-4890-9a0e-ae9e4a581da5-20260823101500-feasibility.docx
           description: Success
         "400":
           $ref: "#/components/responses/Bad Request"
@@ -2115,11 +2043,25 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
-        F03. Upsert the feasibility form draft -- both save-draft and next hit
-        this, sending ONLY the keys they touched. Keys merge into what is
-        already stored, so a partial save never wipes another step's answers;
-        send an explicit null to clear one answer.
-      operationId: saveFeasibilityV3Form
+        F03. One endpoint for the whole feasibility flow. Every POST SAVES the
+        payload's `form` and `user_input` into the session's draft (key-level
+        merge: a partial save -- one step's fields from save-draft or next --
+        never wipes another step's answers; an explicit null clears one
+        answer). The merge is performed atomically in the database (jsonb
+        `||`), so concurrent saves -- an autosave landing while the user
+        clicks next -- cannot lose each other's fields. The draft is
+        therefore never stale after a POST.
+
+        With `generate: true` it ALSO renders the feasibility study DOCX from
+        the doc team's template, filled with the just-saved draft on top of
+        the analyser prefill plus the session's persisted v3 analysis results
+        (site-characterisation, threat, pathway). Generating from a PARTIAL
+        form is allowed by design -- any template tag with no value renders as
+        its literal bracket text (for example `[User input: Telephone]`),
+        visible in the output for manual fill. The file is uploaded to storage
+        and registered as a `FeasibilityV3` document; download it through
+        `/documents/download/docx` with the returned `document_id`.
+      operationId: postFeasibilityV3
       requestBody:
         content:
           application/json:
@@ -2132,15 +2074,29 @@ paths:
                   type: string
                   examples:
                     - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                generate:
+                  type: boolean
+                  default: false
+                  description: >-
+                    false = save the draft only. true = save, then render and
+                    register the DOCX.
                 form:
                   type: object
-                  description: F03 socio-economic answers to merge in (se* keys)
+                  description: >-
+                    F03 socio-economic answers to merge into the draft, keyed
+                    by the form's field names (se*)
                   examples:
                     - seHouseholds: "3140"
                       seDiseases: dengue, malaria
                 user_input:
                   type: object
-                  description: template-tag overrides to merge in
+                  description: >-
+                    free overrides keyed by template tag text, merged into the
+                    draft. A bare key fills `[User input: <key>]`; a full
+                    "Category: name" key overrides any tag.
+                  examples:
+                    - Project Proponent: Yayasan Lestari
+                      DD-Month-Year: 23-August-2026
         required: true
 
   /documents/download/docx:
