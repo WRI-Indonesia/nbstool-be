@@ -36,6 +36,7 @@ from sqlalchemy import create_engine, text
 try:
     from .config import (
         ADMIN_BOUNDARIES_TABLE,
+        INDIGENOUS_TABLE,
         KBA_TABLE,
         KEY_SPECIES_TABLE,
         REFERENCE_CRS,
@@ -45,6 +46,7 @@ try:
 except ImportError:  # imported as a top-level module by a component run as a script
     from config import (
         ADMIN_BOUNDARIES_TABLE,
+        INDIGENOUS_TABLE,
         KBA_TABLE,
         KEY_SPECIES_TABLE,
         REFERENCE_CRS,
@@ -210,6 +212,7 @@ def load_admin_intersecting(aoi) -> gpd.GeoDataFrame:
             adm.province::text     as "NAME_1",
             adm.district::text     as "NAME_2",
             adm.sub_district::text as "NAME_3",
+            adm.village::text      as "NAME_4",
         """
     else:
         columns = """
@@ -217,6 +220,7 @@ def load_admin_intersecting(aoi) -> gpd.GeoDataFrame:
             adm.name_1::text  as "NAME_1",
             adm.name_2::text  as "NAME_2",
             null::text        as "NAME_3",
+            null::text        as "NAME_4",
         """
 
     # ST_CollectionExtract keeps the polygonal parts only. A unit that merely touches the AOI
@@ -295,6 +299,42 @@ def load_kba_intersecting(aoi) -> gpd.GeoDataFrame:
         aoi,
     )
     return gdf.rename(columns={"intname": "IntName", "natname": "NatName"})
+
+
+def load_indigenous_intersecting(aoi) -> gpd.GeoDataFrame:
+    """Indigenous / ethnolinguistic areas intersecting the AOI.
+
+    Reads INDIGENOUS_TABLE (see config.py for the layer choice and its caveats). Columns are the
+    display name (`nmdisp`, falling back to `name` where blank), the country, and `source_ha`:
+    the group's TOTAL mapped extent across the WHOLE table, not just the loaded fragment. The
+    component needs that total to tell a homeland from a nationwide diaspora polygon, and it
+    cannot compute it from what intersects the AOI -- a group is stored as many rows, so only a
+    fragment of its extent loads. The aggregate runs over the rows of the intersecting names
+    only, a handful of groups, not the full layer.
+
+    Not clipped, same as load_kba_intersecting: the component measures overlap itself.
+    """
+    gdf = _load_intersecting(
+        f"""
+        , hits as (
+            select coalesce(nullif(trim(i.nmdisp), ''), i.name) as name,
+                   i.ctry as country, i.geom
+            from {INDIGENOUS_TABLE} i, aoi
+            where i.geom && aoi.geom and ST_Intersects(i.geom, aoi.geom)
+        )
+        select h.name, h.country, h.geom, t.source_ha
+        from hits h
+        join (
+            select coalesce(nullif(trim(e.nmdisp), ''), e.name) as name,
+                   sum(ST_Area(e.geom::geography)) / 10000 as source_ha
+            from {INDIGENOUS_TABLE} e
+            where coalesce(nullif(trim(e.nmdisp), ''), e.name) in (select name from hits)
+            group by 1
+        ) t using (name)
+        """,
+        aoi,
+    )
+    return gdf
 
 
 def load_key_species_intersecting(aoi) -> gpd.GeoDataFrame:

@@ -3,37 +3,33 @@ Component 6.1 People Demography.
 
 How many people live inside the project area, split by sex and by five-year age group.
 
-Data. WorldPop, three rasters. `gridded_population_v3.tif` is a plain count of people per cell.
-`female_pop_v3.tif` and `male_pop_v3.tif` carry twenty five-year age bands each, as BANDS, named
-`f_00_2025` .. `f_90_2025` and `m_00_2025` .. `m_90_2025`. The twenty collapse to the fourteen
-display ranges in PEOPLE_AGE_GROUPS.
+Data. WorldPop, TWO rasters (was three -- see history below). `female_pop_v3.tif` and
+`male_pop_v3.tif` carry twenty five-year age bands each, as BANDS, named `f_00_2025` ..
+`f_90_2025` and `m_00_2025` .. `m_90_2025`. The twenty collapse to the fourteen display ranges
+in PEOPLE_AGE_GROUPS.
 
 POPULATION IS A COUNT, so this reads with `sum` resampling, not `average`. Merging four cells of
 a count means adding the people in them; averaging would quietly delete three quarters of them
 wherever the analysis grid is coarser than WorldPop's. It also means the figures are never
 multiplied by cell area -- they are already people, not people per hectare.
 
-THE TWO SOURCES ARE ON DIFFERENT GRIDS, and the notebook says so at length. The total raster's
-origin sits under a millionth of a degree from the sex rasters' and it is one pixel smaller in
-each dimension; the female and male rasters share one grid between them. `like=total` forces both
-sex stacks onto the total's grid so that a cell means the same ground in all three, which is what
-makes the cross-check at the end meaningful.
+TOTAL POPULATION IS MALE + FEMALE (notebook commit `ab308c9`, 2026-08-22). The total raster
+`gridded_population_v3.tif` is no longer read at all: the male raster is the reference grid, the
+female stack is forced onto it with `like`, and the headline total is the sum of all forty sex-age
+bands. With one source there is nothing to cross-check, so the old coverage machinery -- the
+withheld breakdown, the shared-coverage comparison and their flags -- is gone with the raster, and
+the sex percentages are now shares of the same total the narrative quotes. Values are rounded to
+ten decimals (`round10`) upstream, so the port emits exactly what the notebook prints.
 
-The sex and age breakdown is reported ONLY when the sex rasters completely cover every valid
-total-population cell. Partial coverage would let the age table quietly describe a smaller area
-than the headline total, so it is withheld instead, with a flag. That is why every age figure is
-`None` rather than `0` in that case: no one measured zero people.
-
-The port is the notebook's function unchanged. The three module-level asserts that document
-`_band_total` and `_has_complete_sex_age_coverage` are kept, because they are the only statement
-anywhere of what those two helpers promise.
+The port is the notebook's function unchanged apart from the two seams: `layer_path` resolves the
+layer name (the notebook opens a literal path), and the twenty-band loop reads through
+`load_raster_bands_clipped` (see `_load_population_bands`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import rasterio
 
 try:
@@ -41,7 +37,6 @@ try:
         AOI,
         RasterSlice,
         load_raster_bands_clipped,
-        load_raster_clipped,
         not_applicable,
         safe_pct,
     )
@@ -49,7 +44,6 @@ try:
         PEOPLE_AGE_GROUPS,
         POP_FEMALE_RASTER,
         POP_MALE_RASTER,
-        POP_TOTAL_RASTER,
     )
     from ...settings import layer_path
 except ImportError:  # `python people_demography.py`: no package around it
@@ -61,7 +55,6 @@ except ImportError:  # `python people_demography.py`: no package around it
         AOI,
         RasterSlice,
         load_raster_bands_clipped,
-        load_raster_clipped,
         not_applicable,
         safe_pct,
     )
@@ -69,168 +62,168 @@ except ImportError:  # `python people_demography.py`: no package around it
         PEOPLE_AGE_GROUPS,
         POP_FEMALE_RASTER,
         POP_MALE_RASTER,
-        POP_TOTAL_RASTER,
     )
     from settings import layer_path
 
-AGE_CODES = ("00", "01", "05", "10", "15", "20", "25", "30", "35", "40",
-             "45", "50", "55", "60", "65", "70", "75", "80", "85", "90")
+AGE_CODES = (
+    "00", "01", "05", "10", "15", "20", "25", "30", "35", "40",
+    "45", "50", "55", "60", "65", "70", "75", "80", "85", "90"
+)
+
+round10 = lambda x: None if x is None else round(float(x), 10)  # noqa: E731  (notebook's own)
 
 
-def _check_population_band_contract(path: str, prefix: str) -> None:
+def _check_population_band_contract(path: str, prefix: str):
     # `layer_path` is what turns the config layer name into the bucket URL or the local file; the
     # notebook opened a literal path and so had no need of it.
     expected = tuple(f"{prefix}_{age}_2025" for age in AGE_CODES)
     with rasterio.open(layer_path(path)) as src:
-        if src.count != len(expected) or tuple(src.descriptions) != expected:
-            raise ValueError(
-                f"{path} must contain these 20 bands in order: {', '.join(expected)}."
-            )
+        if src.count != 20 or tuple(src.descriptions) != expected:
+            raise ValueError(f"{path} has incorrect population bands.")
 
 
-def _load_population_bands(path: str, aoi: AOI, like: RasterSlice) -> list[RasterSlice]:
-    # The notebook loops `load_raster_clipped` over the twenty bands, which opens the file twenty
-    # times. `load_raster_bands_clipped` is that loop moved inside a single open: same destination
-    # grid, same reprojection, same mask, verified to return bit-identical arrays. Over /vsicurl
-    # the twenty extra header fetches per stack were most of this component's wall time.
+def _load_population_bands(path: str, aoi: AOI, like: RasterSlice | None = None) -> list[RasterSlice]:
+    # The notebook loops `load_raster_clipped` over the twenty bands with `like` chained from the
+    # first band, which opens the file twenty times. `load_raster_bands_clipped` is that loop moved
+    # inside a single open: with `like=None` it derives the destination grid from the source once,
+    # exactly what the notebook's first band does, and every later band shares it. Same grid, same
+    # reprojection, same mask, verified to return bit-identical arrays. Over /vsicurl the twenty
+    # extra header fetches per stack were most of this component's wall time.
     return load_raster_bands_clipped(path, aoi, resampling="sum", bands=range(1, 21), like=like)
 
 
-def _band_total(bands: list[np.ma.MaskedArray], positions: tuple) -> float:
-    return sum(float(bands[position - 1].filled(0.0).sum()) for position in positions)
-
-
-def _has_complete_sex_age_coverage(total_mask: np.ndarray, sex_age_masks: list[np.ndarray]) -> bool:
-    return bool(sex_age_masks) and all(np.all(~mask[~total_mask]) for mask in sex_age_masks)
-
-
-_demo_bands = [np.ma.array([[float(index)]]) for index in range(1, 21)]
-assert _band_total(_demo_bands, (1, 2)) == 3.0
-assert _band_total(_demo_bands, (15, 16, 17, 18, 19, 20)) == 105.0
-_demo_total_mask = np.array([[False, False]])
-_demo_sex_age_masks = [np.array([[False, False]]) for _ in range(40)]
-assert _has_complete_sex_age_coverage(_demo_total_mask, _demo_sex_age_masks)
-_demo_sex_age_masks[-1] = np.array([[False, True]])
-assert not _has_complete_sex_age_coverage(_demo_total_mask, _demo_sex_age_masks)
+def _band_total(bands, positions):
+    return sum(
+        float(bands[i - 1].filled(0).sum())
+        for i in positions
+    )
 
 
 @dataclass(frozen=True)
 class AgeGroup:
     age_group: str
-    male_population: float | None
-    female_population: float | None
-    male_percent: float | None
-    female_percent: float | None
+    male_population: float
+    female_population: float
+    male_percent: float
+    female_percent: float
 
 
 def analyze_people_demography(aoi: AOI) -> tuple[dict, dict]:
     """Component 6.1. Population of the project area, by sex and age group."""
-    flags: list[str] = []
 
-    total = load_raster_clipped(POP_TOTAL_RASTER, aoi, resampling="sum")
-    if total.valid_count == 0:
+    _check_population_band_contract(POP_MALE_RASTER, "m")
+    _check_population_band_contract(POP_FEMALE_RASTER, "f")
+
+    # Male raster becomes the reference grid
+    male_bands = _load_population_bands(
+        POP_MALE_RASTER,
+        aoi
+    )
+
+    female_bands = _load_population_bands(
+        POP_FEMALE_RASTER,
+        aoi,
+        like=male_bands[0]
+    )
+
+    male_values = [b.values for b in male_bands]
+    female_values = [b.values for b in female_bands]
+
+    # -------------------------------------------------------------------------
+    # Total population = all male + all female age bands
+    # -------------------------------------------------------------------------
+
+    male_population = sum(
+        float(b.filled(0).sum())
+        for b in male_values
+    )
+
+    female_population = sum(
+        float(b.filled(0).sum())
+        for b in female_values
+    )
+
+    total_population = (
+        male_population
+        + female_population
+    )
+
+    if total_population <= 0:
         empty = not_applicable(
             "6.1 People Demography",
-            "No population data is available for this project area.",
+            "No population data is available for this project area."
         )
         results = {'narrative': empty.narrative, 'tables': {'age_groups': []},
                    'values': {}, 'flags': empty.flags, 'missing': empty.missing}
         return results, _empty_view()
 
-    _check_population_band_contract(POP_FEMALE_RASTER, "f")
-    _check_population_band_contract(POP_MALE_RASTER, "m")
-    female_bands = _load_population_bands(POP_FEMALE_RASTER, aoi, total)
-    male_bands = _load_population_bands(POP_MALE_RASTER, aoi, total)
+    # -------------------------------------------------------------------------
+    # Age groups
+    # -------------------------------------------------------------------------
 
-    female_values = [band.values for band in female_bands]
-    male_values = [band.values for band in male_bands]
-    total_mask = np.ma.getmaskarray(total.values)
-    female_mask = np.logical_or.reduce([np.ma.getmaskarray(band.values) for band in female_bands])
-    male_mask = np.logical_or.reduce([np.ma.getmaskarray(band.values) for band in male_bands])
-    shared = ~(total_mask | female_mask | male_mask)
-    sex_age_complete = _has_complete_sex_age_coverage(
-        total_mask,
-        [np.ma.getmaskarray(band.values) for band in female_bands + male_bands],
-    )
-    total_population = float(total.values.filled(0.0).sum())
-    age_rows = [
-        AgeGroup(
-            age_group=label,
-            male_population=(m := _band_total(male_values, positions)) if sex_age_complete else None,
-            male_percent=safe_pct(m, total_population) if sex_age_complete else None,
-            female_population=(f := _band_total(female_values, positions)) if sex_age_complete else None,
-            female_percent=safe_pct(f, total_population) if sex_age_complete else None,
-        )
-        for label, positions in PEOPLE_AGE_GROUPS.items()
-    ]
-    female_population = (
-        sum(row.female_population for row in age_rows if row.female_population is not None)
-        if sex_age_complete else None
-    )
-    male_population = (
-        sum(row.male_population for row in age_rows if row.male_population is not None)
-        if sex_age_complete else None
-    )
+    age_rows = []
 
-    if female_population is not None and male_population is not None:
-        sex_total = female_population + male_population
-        male_pct = safe_pct(male_population, sex_total)
-        female_pct = safe_pct(female_population, sex_total)
-    else:
-        male_pct = None
-        female_pct = None
-        flags.append(
-            "6.1: sex-age rasters do not completely cover all valid total-population cells; "
-            "sex and age breakdown is unavailable."
+    for label, positions in PEOPLE_AGE_GROUPS.items():
+
+        male = _band_total(
+            male_values,
+            positions
         )
 
-    if shared.any():
-        female_grid = sum(band.values.filled(0.0) for band in female_bands)
-        male_grid = sum(band.values.filled(0.0) for band in male_bands)
-        shared_sex_total = float((female_grid[shared] + male_grid[shared]).sum())
-        shared_population_total = float(total.values.filled(0.0)[shared].sum())
-        # Source grids differ by <1e-6 deg; sum resampling of edge cells drifts ~0.02
-        # people on this AOI. 1 person guards genuine data errors, not resampling noise.
-        if not np.isclose(shared_sex_total, shared_population_total, rtol=1e-6, atol=1.0):
-            flags.append(
-                "6.1: the sex-age population total does not match the total population "
-                "raster on their shared valid coverage."
+        female = _band_total(
+            female_values,
+            positions
+        )
+
+        age_rows.append(
+            AgeGroup(
+                age_group=label,
+                male_population=round10(male),
+                female_population=round10(female),
+                male_percent=round10(
+                    safe_pct(male, total_population)
+                ),
+                female_percent=round10(
+                    safe_pct(female, total_population)
+                ),
             )
-    else:
-        flags.append(
-            "6.1: the sex-age rasters have no shared valid coverage with the total population raster."
         )
 
-    if female_population is not None and male_population is not None:
-        narrative = (
-            f"Based on gridded world population data, the selected area has an estimated "
-            f"total population of {total_population:,.0f}, consisting of "
-            f"{male_population:,.0f} males and {female_population:,.0f} females."
-        )
-    else:
-        narrative = (
-            f"Based on gridded world population data, the selected area has an estimated "
-            f"total population of {total_population:,.0f}. The sex and age breakdown is unavailable."
-        )
+    male_pct = safe_pct(
+        male_population,
+        total_population
+    )
+
+    female_pct = safe_pct(
+        female_population,
+        total_population
+    )
+
+    narrative = (
+        f"Based on gridded population data, the selected area has an estimated "
+        f"total population of {total_population:,.0f}, consisting of "
+        f"{male_population:,.0f} males and {female_population:,.0f} females."
+    )
 
     results = {
         'narrative': narrative,
         'tables': {"age_groups": age_rows},
         'values': {
-            "total_population": total_population,
-            "male_population": male_population,
-            "female_population": female_population,
-            "male_pct": male_pct,
-            "female_pct": female_pct,
+            "total_population": round10(total_population),
+            "male_population": round10(male_population),
+            "female_population": round10(female_population),
+            "male_pct": round10(male_pct),
+            "female_pct": round10(female_pct),
             "chart_series": "age_groups",
             "chart_unit": "people",
             "chart_axis_label": "Estimated population",
         },
-        'flags': flags,
+        'flags': [],
     }
 
-    return results, _view(total_population, male_population, female_population,
-                          male_pct, female_pct, age_rows)
+    return results, _view(round10(total_population), round10(male_population),
+                          round10(female_population), round10(male_pct), round10(female_pct),
+                          age_rows)
 
 
 # ============================ ENDPOINT SHAPE ============================

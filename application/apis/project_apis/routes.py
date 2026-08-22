@@ -24,6 +24,7 @@ from ...utils.common import app_exception_handler, success_handler
 # from ...utils.document_generator import generate_document_form
 #
 # from ..geo_apis.utils import GeoLogic
+from ...utils.document_generator.v3.prefill import feasibility_prefill
 
 
 # legacy: /nbsapi/project-management/bind-project [POST]
@@ -55,13 +56,23 @@ def projects_bind_project():
 
         message = 'Project is updated successfully'
         status_code = 200
-        
+
         g_var.__session_id__ = session_id
-        
+
         document_id = str(uuid.uuid4())
         data_analyzer = DataAnalyzer.find_by_session_id(session_id)
-        adm = data_analyzer.site_information["administrative_boundaries"]
-        project_name = string.capwords(adm["district"]) + " district Project in " + string.capwords(adm["country"])
+
+        # v3 analyser shape: flat keys in site_information_json (the v2 pickle path is dead on
+        # this branch and old rows will be migrated to v3).
+        site = (data_analyzer.site_information_json if data_analyzer else None) or {}
+        project_name = data.get('project_name')
+        if not project_name:
+            where = site.get('district') or site.get('province')
+            country = site.get('country')
+            if where and country:
+                project_name = f"{string.capwords(where)} district Project in {string.capwords(country)}"
+            else:
+                project_name = f"Project {session_id[:8]}"
 
         g_var.__description_data__['project_name'] = project_name
 
@@ -73,13 +84,24 @@ def projects_bind_project():
 
             message = 'Project is created successfully'
             status_code = 201
-        
+
         known_project.user_id = user_id
         known_project.project_name = project_name
+        if data.get('description') is not None:
+            known_project.project_description = data.get('description')
         known_project.is_project = 1
         db.session.add(known_project)
-        
-        if str(template_type).lower() != 'general':
+
+        # Seed the feasibility form storage with the analyser prefill, so the F03 form and the
+        # docx template have their initial data from the moment the session becomes a project.
+        # Never overwrites answers a user already saved.
+        known_form = DocumentData.find_by_session_id_and_type(session_id, 'FeasibilityV3')
+        if not known_form:
+            known_form = DocumentData(session_id=session_id, certification_type='FeasibilityV3',
+                                      form=feasibility_prefill(data_analyzer))
+            db.session.add(known_form)
+
+        if template_type is not None and str(template_type).lower() != 'general':
             # The CCB template build read the v2 current-condition analyzer shape
             # (process_get_data_analyzer), which is turned off. Disabled until the new
             # benefit/site-characterisation data feeds the templates.

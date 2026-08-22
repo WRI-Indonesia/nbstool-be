@@ -88,7 +88,11 @@ def analyze_kba(aoi: AOI) -> tuple[dict, dict]:
             'values': {'kba_ha': 0.0, 'kba_pct': 0.0, 'kba_site_count': 0},
             'flags': [],
         }
-        view_results = {'overlapping_key_biodiversity_areas': []}
+        view_results = {
+            'overlapping_key_biodiversity_areas': [],
+            'overlapping_key_biodiversity_area_total_size': 0.0,
+            'overlapping_key_biodiversity_area_percentage': 0.0,
+        }
         return results, view_results
 
     kba_ha = union_overlap_ha(aoi, gdf)
@@ -121,15 +125,17 @@ def analyze_kba(aoi: AOI) -> tuple[dict, dict]:
         'flags': [],
     }
 
-    # The endpoint contract carries the per-site list only, no headline total. `kba_ha` (the
-    # deduplicated union) stays in `results` rather than being dropped: summing the list below
-    # double counts wherever two KBA polygons overlap, so the two are not interchangeable.
+    # The headline total is the DEDUPLICATED UNION, promoted alongside the per-site list because
+    # summing the list double counts wherever two KBA polygons overlap -- a consumer must use the
+    # total fields for a headline, never the sum of the rows.
     view_results = {
         'overlapping_key_biodiversity_areas': [
             {'overlapping_key_biodiversity_name': s.name,
              'overlapping_key_biodiversity_area_size': s.area_ha}
             for s in sites
         ],
+        'overlapping_key_biodiversity_area_total_size': kba_ha,
+        'overlapping_key_biodiversity_area_percentage': kba_pct,
     }
 
     return results, view_results

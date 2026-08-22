@@ -295,7 +295,8 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
         results = {'narrative': "Habitat data is not available for this project area.",
                    'tables': {'species': []}, 'values': {}, 'flags': flags, 'retryable': True}
         return results, dict.fromkeys(AOH_TAXON_FIELDS.values(), None) | {
-            'total_wildlife_species': None, 'habitat_species_name': []}
+            'total_wildlife_species': None, 'habitat_species_name': [],
+            'species_list': [], 'iucn_summary': None}
 
     species_rows = result["species"].to_dict(orient="records")
     class_summary = result["class_summary"]
@@ -340,6 +341,19 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
     # notebook's own form is kept in the table below.
     species_names = sorted(row["species"].replace("_", " ") for row in species_rows)
 
+    # The per-species rows a report's species annex needs: name, class and both IUCN fields the
+    # inventory carries. Already sorted by class then species. The area/pixel columns stay in
+    # `results['tables']` -- they size the table without serving any card or template field.
+    species_list = [
+        {
+            'scientific_name': row["species"].replace("_", " "),
+            'taxon_class': row["class"],
+            'iucn_status': row["iucn_status"],
+            'redlist_category': row["redlistCategory"],
+        }
+        for row in species_rows
+    ]
+
     values = {
         'aoi_area_ha': result["aoi_area_ha"],
         'inventory_species_count': result["inventory_species_count"],
@@ -359,7 +373,8 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
             'missing': missing,
             'retryable': retryable,
         }
-        return results, dict(counts, total_wildlife_species=total, habitat_species_name=[])
+        return results, dict(counts, total_wildlife_species=total, habitat_species_name=[],
+                             species_list=[], iucn_summary={})
 
     named = ", ".join(species_names[:5])
     more = f", and {len(species_names) - 5} more" if len(species_names) > 5 else ""
@@ -375,9 +390,13 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
         'retryable': retryable,
     }
 
-    # The HABITAT AREA card: four counts and their total. 2.5's recorded occurrences are a
-    # separate card and share no field with these -- see the module docstring.
-    return results, dict(counts, total_wildlife_species=total, habitat_species_name=species_names)
+    # The HABITAT AREA card: four counts and their total, plus the species rows and the IUCN
+    # category counts for report templates. `iucn_summary` counts `iucn_status`, per the
+    # notebook's own value_counts; int() there already made its values JSON-safe. 2.5's recorded
+    # occurrences are a separate card and share no field with these -- see the module docstring.
+    return results, dict(counts, total_wildlife_species=total, habitat_species_name=species_names,
+                         species_list=species_list,
+                         iucn_summary={k: int(v) for k, v in result["iucn_summary"].items()})
 
 
 if __name__ == "__main__":

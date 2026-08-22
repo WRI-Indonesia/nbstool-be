@@ -6,10 +6,11 @@ envelope and the per component failure rule come from v3/pipeline.py, and what l
 `processes` list and the wiring. All six of the notebook's Climate components are real
 `analyze_*(aoi)` functions, so all six are ported.
 
-An eighth step, `burned area`, has no notebook section at all. It fills the contract's two
-burned-area fields from the V2 backend's logic and V2's own layers under `assets-geo/baseline/`,
-on the team's instruction to use the v2 version. See burned_area.py, and note that its total and
-its annual series deliberately do not add up.
+An eighth step, `burned area`, fills the contract's two burned-area fields from the notebook's
+3.7 Historical Burned Area (GABAM 2014-2024) -- see historical_burned_area.py, and note that its
+union headline and its annual series deliberately do not add up. The wire name stays `burned
+area` so retry URLs and the frontend's process list did not change when the source did
+(2026-08-22; previously a port of v2's MODIS-based logic).
 
 The one cross-module dependency. 3.2 takes `ecosystem_present`, the Axis 3 set produced by 1.1 in
 the GENERAL stage, and uses it to decide whether to add the peat caveat. Climate can be run
@@ -42,8 +43,8 @@ try:
     from ...pipeline import after, component_count, error_status, safe, stream
     from .annual_precipitation import analyze_annual_precipitation
     from .annual_temperature import analyze_annual_temperature
-    from .burned_area import analyze_burned_area
     from .current_carbon_storage import analyze_current_carbon_storage
+    from .historical_burned_area import analyze_historical_burned_area
     from .fire_susceptibility import analyze_fire_susceptibility
     from .soil_classification import analyze_soil_classification
     from .soil_organic_carbon import analyze_soil_organic_carbon
@@ -55,10 +56,10 @@ except ImportError:  # `python run_climate.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     from annual_precipitation import analyze_annual_precipitation
     from annual_temperature import analyze_annual_temperature
-    from burned_area import analyze_burned_area
     from common import AOI
     from current_carbon_storage import analyze_current_carbon_storage
     from fire_susceptibility import analyze_fire_susceptibility
+    from historical_burned_area import analyze_historical_burned_area
     from pipeline import after, component_count, error_status, safe, stream
     from soil_classification import analyze_soil_classification
     from soil_organic_carbon import analyze_soil_organic_carbon
@@ -178,7 +179,7 @@ def _run_components(aoi: AOI, ecosystem_present: set[int] | None = None):
             pool.submit(safe, 'annual temperature', analyze_annual_temperature, aoi),
             pool.submit(safe, 'annual precipitation', analyze_annual_precipitation, aoi),
             pool.submit(safe, 'fire susceptibility', analyze_fire_susceptibility, aoi),
-            pool.submit(safe, 'burned area', analyze_burned_area, aoi),
+            pool.submit(safe, 'burned area', analyze_historical_burned_area, aoi),
             pool.submit(safe, 'soil classification', analyze_soil_classification, aoi),
         )
 

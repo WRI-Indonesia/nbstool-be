@@ -112,6 +112,9 @@ def documents_get_document_download_docx():
         if known_document.document_type.lower() == 'ccb':
             folder_path = 'generated-file/docx-ccb/'
             client_name = "CCB Project Documentation.docx"
+        elif known_document.document_type == 'FeasibilityV3':
+            folder_path = 'generated-file/docx-v3/'
+            client_name = "Feasibility Study.docx"
         else:
             folder_path = 'generated-file/docx/'
             client_name = "Preliminary Assessment Document.docx"

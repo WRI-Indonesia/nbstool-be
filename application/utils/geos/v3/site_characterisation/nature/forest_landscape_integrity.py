@@ -81,7 +81,8 @@ def _empty(reason: str) -> tuple[dict, dict]:
     results = {'narrative': empty.narrative, 'tables': {'integrity': []},
                'values': {}, 'flags': empty.flags, 'missing': empty.missing}
     view_results = {'flii_score': None, 'high_integrity_percentage': None,
-                    'medium_integrity_percentage': None, 'low_integrity_percentage': None}
+                    'medium_integrity_percentage': None, 'low_integrity_percentage': None,
+                    'dominant_integrity_class': None}
     return results, view_results
 
 
@@ -138,6 +139,9 @@ def analyze_flii(aoi: AOI) -> tuple[dict, dict]:
         'high_integrity_percentage': by_code[FLII_HIGH].pct,
         'medium_integrity_percentage': by_code[FLII_MEDIUM].pct,
         'low_integrity_percentage': by_code[FLII_LOW].pct,
+        # "High" / "Medium" / "Low", the class the narrative names. Was values-only (as a code);
+        # promoted so templates get the integrity category without re-deriving it from the shares.
+        'dominant_integrity_class': dom.label,
     }
 
     return results, view_results

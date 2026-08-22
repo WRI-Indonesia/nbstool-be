@@ -115,9 +115,10 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
     countries = _admin_units(gdf, aoi, *ADMIN_LEVELS["country"])
     provinces = _admin_units(gdf, aoi, *ADMIN_LEVELS["province"])
     districts = _admin_units(gdf, aoi, *ADMIN_LEVELS["district"])
-    # Level 3 is not part of the notebook's three levels. It is filled when the source carries it,
-    # which today means Indonesia only, and stays empty everywhere else.
+    # Levels 3 and 4 are not part of the notebook's three levels. They are filled when the source
+    # carries them, which today means Indonesia only, and stay empty everywhere else.
     subdistricts = _admin_units(gdf, aoi, *ADMIN_LEVELS["subdistrict"])
+    villages = _admin_units(gdf, aoi, *ADMIN_LEVELS["village"])
 
     # "approximate total area" is the whole AOI, not the part inside the named district.
     area_text = f"{aoi.area_ha:,.0f}"
@@ -182,6 +183,7 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
             'country': countries,
             'province': provinces,
             'subdistrict': subdistricts,
+            'village': villages,
         },
         'values': {
             'dominant_country': countries[0].name if countries else None,
@@ -190,6 +192,7 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
             ),
             'dominant_district': districts[0].name if districts else None,
             'dominant_subdistrict': subdistricts[0].name if subdistricts else None,
+            'dominant_village': villages[0].name if villages else None,
             'transboundary': len(countries) > 1,
             'provinces': [u.name for u in provinces],
         },
@@ -223,9 +226,16 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         ]
 
     view_results = {
+        # Dominant L4 (desa). Indonesia only today -- null wherever the source has no village
+        # level. The overlap table below stays at sub-district depth on purpose: an AOI can touch
+        # hundreds of villages, and the card's table is not the place to list them.
+        'village': results['values']['dominant_village'],
         'subdistrict': results['values']['dominant_subdistrict'],
         'district': results['values']['dominant_district'],
         'province': results['values']['dominant_province'],
+        # Dominant L0. Was values-only; promoted so report templates and stored results carry the
+        # country without a second lookup.
+        'country': results['values']['dominant_country'],
         'overlapping_administration': overlapping,
     }
 

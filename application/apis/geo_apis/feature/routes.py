@@ -34,6 +34,7 @@ from ....utils.geos.v3.site_characterisation.run_site_characterisation import (
     stream_site_characterisation,
 )
 from ....utils.geos.v3.threat.run_threat import SECTIONS, stream_threat
+from .persist import SITECHAR_COLUMNS, persist_ndjson, save_v3_sections
 
 from ..utils import GeoLogic
 
@@ -320,7 +321,10 @@ def geo_feature_site_characterisation():
     def retry_url(process):
         return f"{path}?{urlencode({'session_id': session_id, 'process': process})}"
 
-    lines = _limit_slots(stream_site_characterisation(aoi, wanted, retry_url))
+    # Persist wraps the RAW stream, before the error_test overlays: what lands in DataAnalyzer is
+    # what the analysis produced, not a simulated failure.
+    lines = _limit_slots(persist_ndjson(
+        stream_site_characterisation(aoi, wanted, retry_url), session_id, SITECHAR_COLUMNS.get))
     if error_test == 'stream':
         lines = _error_test_truncate(lines)
     elif error_test == 'data':
@@ -382,8 +386,14 @@ def geo_feature_threat():
     def retry_url(process):
         return f"{path}?{urlencode({'session_id': session_id, 'process': process})}"
 
+    # Nested by section name: the four tabs reuse field names (`total_area_ha` and friends), so
+    # they cannot share one flat namespace in threat_json.
+    lines = _limit_slots(persist_ndjson(
+        stream_threat(aoi, wanted, retry_url), session_id,
+        lambda name: 'threat_json', nest_by_process=True))
+
     return Response(
-        stream_with_context(_limit_slots(stream_threat(aoi, wanted, retry_url))),
+        stream_with_context(lines),
         mimetype='application/x-ndjson',
     )
 
@@ -420,6 +430,8 @@ def geo_feature_pathway():
         # `to_jsonable` because the components return dataclasses and numpy scalars, exactly as
         # they do in the notebook, and jsonify takes neither.
         result = to_jsonable(run_pathway(aoi))
+
+        save_v3_sections(session_id, {'intervention_eligibility_json': result})
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

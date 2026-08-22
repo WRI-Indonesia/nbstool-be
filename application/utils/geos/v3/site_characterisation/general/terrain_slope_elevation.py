@@ -40,6 +40,8 @@ activities and raise erosion risk; elevation guides species and forest type choi
 
 from __future__ import annotations
 
+import numpy as np
+
 try:
     from ...common import (
         AOI,
@@ -106,13 +108,18 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
         )
         results = {'narrative': empty.narrative, 'tables': {'slope': [], 'elevation': []},
                    'values': {}, 'flags': empty.flags, 'missing': empty.missing}
-        view_results = {'slopes': [], 'min_elevation': None, 'max_elevation': None,
+        view_results = {'slopes': [], 'average_slope_percentage': None,
+                        'min_elevation': None, 'max_elevation': None,
                         'predominant_elevation_dict': None}
         return results, view_results
 
     slope_c = slope_percent_from_dem(elev_c, aoi)
     slope = classify_continuous(slope_c, SLOPE_BREAKS)
     elev = classify_continuous(elev_c, ELEVATION_BREAKS)
+
+    # Mean of the continuous slope grid, in percent, over the same valid pixels the class
+    # shares are computed on. Report templates quote it alongside the dominant class.
+    average_slope = float(np.ma.mean(slope_c.values))
 
     slope_rows = tabulate_classes(slope, SLOPE_CLASSES, denominator_ha=slope.valid_area_ha)
     elev_rows = tabulate_classes(elev, ELEVATION_CLASSES, denominator_ha=elev.valid_area_ha)
@@ -142,6 +149,7 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
         'values': {
             'dominant_slope': dom_slope.code if dom_slope else None,
             'dominant_elevation': dom_elev.code if dom_elev else None,
+            'average_slope_pct': average_slope,
         },
         'flags': [],
     }
@@ -157,6 +165,7 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
             }
             for row in slope_rows
         ],
+        'average_slope_percentage': round(average_slope, 2),
         # Exact metres from the continuous DEM, the same figures the narrative quotes.
         'min_elevation': vmin,
         'max_elevation': vmax,

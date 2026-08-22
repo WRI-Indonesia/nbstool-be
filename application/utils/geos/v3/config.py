@@ -322,7 +322,29 @@ ADMIN_LEVELS = {
     "province":    (["COUNTRY", "NAME_1"], "NAME_1", "COUNTRY"),
     "district":    (["COUNTRY", "NAME_1", "NAME_2"], "NAME_2", "NAME_1"),
     "subdistrict": (["COUNTRY", "NAME_1", "NAME_2", "NAME_3"], "NAME_3", "NAME_2"),
+    # Level 4 (desa). Populated by the matview for Indonesia only; every other country stores an
+    # empty string there, which _admin_units' blank-key filter drops.
+    "village":     (["COUNTRY", "NAME_1", "NAME_2", "NAME_3", "NAME_4"], "NAME_4", "NAME_3"),
 }
+
+# Indigenous territory. Which polygon layer the indigenous territory component reads. The GIS
+# database holds three candidates; this one is the ONLY polygon layer covering Indonesia:
+#   sea.indigenous_ethnicity        MultiPolygon, 9,267 rows, all 11 countries  <- used
+#   sea.indigenous_ethnic_indicative MultiPolygon, 415 rows, no Indonesia or Philippines
+#   sea.indigenous_indicative        POINTS (AMAN member communities), unusable for overlap
+# It is an ethnolinguistic homelands map, so the "territory" name is the people's name (Dayak,
+# Pakpak, ...), indicative rather than a legally recognised boundary. Swap the table here if the
+# team later prefers the labeled-territory layer plus a country carve-out.
+INDIGENOUS_TABLE = "sea.indigenous_ethnicity"
+# A sliver threshold like 1.2's, because ethnolinguistic boundaries are coarse: an overlap under
+# 1% of the AOI is boundary noise, not a resident group.
+INDIGENOUS_SLIVER_PCT = 1.0
+# The layer also maps NATIONWIDE DIASPORA polygons -- Han Chinese in Indonesia is one 57M ha
+# polygon covering the whole archipelago, and it would otherwise "win" every AOI at 100%.
+# A group whose total mapped extent exceeds this is a population distribution, not a homeland,
+# and is dropped. Calibrated on West Kalimantan: genuine homelands measured 0.1-3M ha against
+# the 57M ha blanket; 20M ha splits them with an order of magnitude to spare on either side.
+INDIGENOUS_MAX_SOURCE_HA = 20_000_000
 
 # Protected areas, WDPA (1.3). No v3 bucket object, and the backend already holds the layer, so
 # this one reads the GIS database. db.load_wdpa_intersecting renames the columns back to the
@@ -532,33 +554,21 @@ DRY_MONTH_MM = 100
 # "highest class covering 20%" rule).
 # WHAT THIS CHANGES: 3.5 shows four bars where the notebook shows five. The component logic is
 # untouched; only the layer and its legend differ, because no other fire layer exists.
-# Burned area history (3.x, endpoint fields `total_burned_area` and `historical_burned_areas`).
-# NOT a notebook component: the v3 notebook has no burned-area section, so this follows the V2
-# backend's `get_climate_burned_area_data` in utils/geos/current_condition.py, on the team's
-# instruction to use the v2 version.
+# Burned area history (endpoint fields `total_burned_area` and `historical_burned_areas`).
+# Until 2026-08-22 this was NOT a notebook component -- it followed the V2 backend's
+# `get_climate_burned_area_data` because the notebook had no burned-area section yet.
 #
-# TWO DIFFERENT LAYERS, and they are not interchangeable:
-#   the FREQUENCY raster is one band holding, per cell, how many times it burned over the record.
-#   Total burned area is the area of every cell that burned at least once -- so a cell that burned
-#   four times contributes its area once, not four times.
-#   the ANNUAL rasters are ten 0/1 masks, one per year, 2011-2020. Their per-year areas are the
-#   chart series, and they SUM TO MORE than the total above whenever a cell burned in two
-#   different years. That is not an inconsistency: one counts places, the other counts place-years.
-#
-# These live under `assets-geo/baseline/`, not the v3 root, so they are full URLs rather than
-# layer names -- `settings.layer_path` is not involved and V3_BUCKET does not move them.
-BURNED_BASELINE_ROOT = "https://storage.googleapis.com/assets-geo/baseline"
-BURNED_FREQUENCY_RASTER = f"{BURNED_BASELINE_ROOT}/2024-05-14_MCD64A1_BurnArea_2011_2020_Frequency_EPSG4326.tif"
-BURNED_ANNUAL_RASTER = BURNED_BASELINE_ROOT + "/burned_area_{year}.tif"
-BURNED_YEARS = range(2011, 2021)
-# The annual masks are 250 m in EPSG:4326 and v2 converts a pixel count to hectares with this
-# nominal cell size rather than by reprojecting. Kept because the figures must match v2's.
-BURNED_ANNUAL_PIXEL_M = 250
-# NB the v3 bucket also carries `burned_area_v3.tif`: the same MODIS product as the frequency
-# raster above but at 250 m rather than 500 m, matching the annual rasters' grid, and covering a
-# longer record (on indonesia_3 it counts 906 burn events against the annual series' 710, so its
-# period is not 2011-2020). Switching to it is a one-line change here, but it would move the
-# reported total away from v2's and is not what was asked for.
+# SINCE 2026-08-22 the component is the notebook's 3.7 Historical Burned Area (team decision):
+# GABAM annual burned maps, one binary raster per year under `gabam/` in the v3 bucket, value
+# 1 = burned and 0 = NODATA, ~30 m, EPSG:4326. The headline is the UNION footprint (burned at
+# least once); the chart is per year and sums to more wherever ground reburned. The template is a
+# layer name with a {year} slot, resolved through `settings.layer_path` like every other v3 layer;
+# the notebook's own GABAM_RASTER_TEMPLATE points at a local folder instead.
+# The previous component reproduced v2's MODIS layers under `assets-geo/baseline/` (frequency
+# raster 2011-2020 + ten annual masks at a nominal 250 m); see git history of burned_area.py if
+# parity with v2's production figures is ever wanted again.
+GABAM_YEARS = list(range(2014, 2025))          # 2014..2024 inclusive
+GABAM_RASTER_TEMPLATE = "gabam/GABAM_{year}.tif"
 FIRE_HAZARD_RASTER = RISK_RASTERS["fire"]
 FIRE_LEVELS = RISK_LEVELS
 
@@ -660,9 +670,9 @@ TREE_SPECIES_RASTER = "tree_species_v3.tif"
 # finer. A payload therefore mixes a site figure with a regional one, and the regional sections
 # each carry `administrative_area_name` so a reader can see which area a number is about.
 
-# Population (6.1). WorldPop. The total raster is a plain count per cell; the sex rasters carry 20
-# five-year age bands each, as BANDS, named f_00_2025 .. f_90_2025 and m_00_2025 .. m_90_2025.
-POP_TOTAL_RASTER = "gridded_population_v3.tif"
+# Population (6.1). WorldPop. The sex rasters carry 20 five-year age bands each, as BANDS, named
+# f_00_2025 .. f_90_2025 and m_00_2025 .. m_90_2025. Since notebook commit `ab308c9` (2026-08-22)
+# the total is male + female and the total raster `gridded_population_v3.tif` is no longer read.
 POP_FEMALE_RASTER = "female_pop_v3.tif"
 POP_MALE_RASTER = "male_pop_v3.tif"
 

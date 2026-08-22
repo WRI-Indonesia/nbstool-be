@@ -69,9 +69,9 @@ try:
     from ..pipeline import after, error_status, safe, stream
     from .climate.annual_precipitation import analyze_annual_precipitation
     from .climate.annual_temperature import analyze_annual_temperature
-    from .climate.burned_area import analyze_burned_area
     from .climate.current_carbon_storage import analyze_current_carbon_storage
     from .climate.fire_susceptibility import analyze_fire_susceptibility
+    from .climate.historical_burned_area import analyze_historical_burned_area
     from .climate.run_climate import _carbon_shares
     from .climate.run_climate import processes as climate_processes
     from .climate.soil_classification import analyze_soil_classification
@@ -79,6 +79,7 @@ try:
     from .general.administrative_boundaries import analyze_admin_boundaries
     from .general.ecosystem_type import analyze_ecosystem_type
     from .general.historical_deforestation import analyze_historical_deforestation
+    from .general.indigenous_territory import analyze_indigenous_territory
     from .general.land_cover import analyze_land_cover
     from .general.natural_disaster_risk import analyze_natural_risk
     from .general.protected_areas_wdpa import analyze_protected_areas
@@ -107,7 +108,6 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from administrative_boundaries import analyze_admin_boundaries
     from annual_precipitation import analyze_annual_precipitation
     from annual_temperature import analyze_annual_temperature
-    from burned_area import analyze_burned_area
     from common import AOI
     from conservation_significance import analyze_conservation_significance
     from current_carbon_storage import analyze_current_carbon_storage
@@ -116,7 +116,9 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from fire_susceptibility import analyze_fire_susceptibility
     from forest_landscape_integrity import analyze_flii
     from habitat_area import analyze_habitat_area
+    from historical_burned_area import analyze_historical_burned_area
     from historical_deforestation import analyze_historical_deforestation
+    from indigenous_territory import analyze_indigenous_territory
     from key_biodiversity_areas import analyze_kba
     from key_species_presence import analyze_key_species
     from land_cover import analyze_land_cover
@@ -197,6 +199,7 @@ _UNORDERED: dict[str, tuple] = {
     'deforestation risk':         (_risk_after_admin, ('administrative boundaries',)),
     'natural disaster risks':     (analyze_natural_risk, ()),
     'land cover':                 (analyze_land_cover, ()),
+    'indigenous territory':       (analyze_indigenous_territory, ()),
     # Nature, 2.1 / 2.2 / 2.3 / 2.5 / 2.6 plus endangered trees
     'forest landscape integrity': (analyze_flii, ()),
     'key biodiversity areas':     (analyze_kba, ()),
@@ -212,7 +215,7 @@ _UNORDERED: dict[str, tuple] = {
     'annual temperature':         (analyze_annual_temperature, ()),
     'annual precipitation':       (analyze_annual_precipitation, ()),
     'fire susceptibility':        (analyze_fire_susceptibility, ()),
-    'burned area':                (analyze_burned_area, ()),
+    'burned area':                (analyze_historical_burned_area, ()),
     'soil classification':        (analyze_soil_classification, ()),
     # People, 6.1 to 6.3
     'people demography':          (analyze_people_demography, ()),
