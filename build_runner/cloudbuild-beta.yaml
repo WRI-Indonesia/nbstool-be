@@ -75,12 +75,13 @@ steps:
           --ssh-key-expire-after=30m --command="
           echo $$ENV_B64 | base64 -d | sudo tee /var/lib/app-beta.env > /dev/null &&
           sudo chmod 600 /var/lib/app-beta.env &&
-          sudo docker-credential-gcr configure-docker &&
-          sudo docker pull $$IMAGE &&
+          docker-credential-gcr configure-docker --registries=gcr.io &&
+          sudo DOCKER_CONFIG=/home/cloudbuild/.docker docker pull $$IMAGE &&
           (sudo docker rm -f app-beta || true) &&
           sudo docker run -d --name app-beta -p 8081:8080 --restart=always \
             --env-file /var/lib/app-beta.env \
-            $$IMAGE
+            $$IMAGE &&
+          sudo docker image prune -af
         "
       done
 
