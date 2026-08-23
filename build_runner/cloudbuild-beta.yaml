@@ -57,17 +57,23 @@ steps:
       EOF
 
       IMAGE="gcr.io/$PROJECT_ID/beta-nbs-service:beta-$SHORT_SHA"
+      # env file travels inside the SSH command as base64 — stdin is unreliable
+      # (gcloud first-run prompts read from it).
+      ENV_B64=$(base64 -w0 /workspace/app-beta.env)
 
-      for VM in $(gcloud compute instance-groups managed list-instances ${_MIG_NAME} \
-          --zone=${_ZONE} --format="value(instance)"); do
+      VMS=$(gcloud compute instance-groups managed list-instances ${_MIG_NAME} --zone=${_ZONE} --format="value(instance.basename())")
+      echo "instances in ${_MIG_NAME}: $$VMS"
+      if [ -z "$$VMS" ]; then
+        echo "ERROR: no instances found in MIG ${_MIG_NAME} (zone ${_ZONE})"
+        exit 1
+      fi
+
+      for VM in $$VMS; do
         echo ">>> swapping beta container on $$VM"
-
-        gcloud compute ssh "$$VM" --zone=${_ZONE} --tunnel-through-iap \
-          --command="sudo tee /var/lib/app-beta.env > /dev/null && sudo chmod 600 /var/lib/app-beta.env" \
-          < /workspace/app-beta.env
-
-        gcloud compute ssh "$$VM" --zone=${_ZONE} --tunnel-through-iap --command="
-          docker-credential-gcr configure-docker &&
+        gcloud compute ssh "$$VM" --zone=${_ZONE} --tunnel-through-iap --quiet --command="
+          echo $$ENV_B64 | base64 -d | sudo tee /var/lib/app-beta.env > /dev/null &&
+          sudo chmod 600 /var/lib/app-beta.env &&
+          sudo docker-credential-gcr configure-docker &&
           sudo docker pull $$IMAGE &&
           (sudo docker rm -f app-beta || true) &&
           sudo docker run -d --name app-beta -p 8081:8080 --restart=always \
