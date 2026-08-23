@@ -70,7 +70,9 @@ steps:
 
       for VM in $$VMS; do
         echo ">>> swapping beta container on $$VM"
-        gcloud compute ssh "$$VM" --zone=${_ZONE} --tunnel-through-iap --quiet --command="
+        # Cloud Build runs as root; COS refuses root SSH — use explicit user.
+        gcloud compute ssh "cloudbuild@$$VM" --zone=${_ZONE} --tunnel-through-iap --quiet \
+          --ssh-key-expire-after=30m --command="
           echo $$ENV_B64 | base64 -d | sudo tee /var/lib/app-beta.env > /dev/null &&
           sudo chmod 600 /var/lib/app-beta.env &&
           sudo docker-credential-gcr configure-docker &&
