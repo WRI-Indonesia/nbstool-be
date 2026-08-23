@@ -1,7 +1,7 @@
 # application/apis/user_apis/routes.py
 from . import user_apis_blueprint
 from ... import db, login_manager
-from ...models.user_models.models import User, UserSessions, UserRequests, Settings
+from ...models.user_models.models import User, UserSessions
 from ...models.master_models.models import Organization
 from flask import make_response, request, jsonify, current_app, g as g_var
 from flask_login import current_user, login_user, logout_user, login_required
@@ -28,7 +28,7 @@ from flask_jwt_extended import create_access_token, decode_token
 from ...utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ...utils.common import app_exception_handler, success_handler
 from ...utils.common import allowed_image_file, sanitize_for_jsonb
-from ...utils.common.mail import BaseMail, EMailUserRegister, EMailUserForgotPassword, EMailReviewUserRequest
+from ...utils.common.mail import BaseMail, EMailUserRegister, EMailUserForgotPassword
 from ...utils.cloud_storage import CloudStorage
 
 from .utils import UserLogic
@@ -130,8 +130,7 @@ def user_save_profile():
 
         try:
             data = json.loads(data)
-        except Exception as e:
-            print(str(e))
+        except:
             raise AppMessageException('bad request, invalid data')
 
         if avatar:
@@ -153,52 +152,37 @@ def user_save_profile():
 
                 data["avatar"] = file_path
 
-        try:
-            current_user.extended_data_json = dict(current_user.extended_data_json)
-        except Exception as e:
-            print(str(e))
-            current_user.extended_data_json = {}
-
         if section == "profile":
+            extended_data = data
+
             if data.get("name"):
                 current_user.name = data["name"]
-            else:
-                raise AppMessageException('please input: fullname')
+                extended_data.pop("name")
 
-            if data.get("avatar"):
-                avatar = open(data["avatar"], 'rb').read() 
-                current_user.avatar = avatar
-            
-            current_user.extended_data_json['role'] = data.get('role') or ''
-            current_user.extended_data_json['phone'] = data.get('phone') or ''
-            current_user.extended_data_json['short_bio'] = data.get('short_bio') or ''
-        elif section == 'organization':
-            if not data.get('organization_type_id'):
-                raise AppMessageException('please input: organization type')
-            elif not data.get('organization_name'):
-                raise AppMessageException('please input: organization name')
-            elif not data.get('country'):
-                raise AppMessageException('please input: country (text mandatory)')
-            
-            known_organization_type = Organization.query.filter_by(id=data.get('organization_type_id')).first()
-            if not known_organization_type:
-                raise AppMessageException('invalid input: organization type not found')
+            if data.get("email"):
+                current_user.email = data["email"]
+                extended_data.pop("email")
 
             if data.get("organization_type_id"):
                 current_user.organization_type_id = data["organization_type_id"]
+                extended_data.pop("organization_type_id")
 
             if data.get("organization_name"):
                 current_user.organization_name = data["organization_name"]
-            
-            current_user.extended_data_json['country'] = str(data.get('country')).title()
-            current_user.extended_data_json['province'] = data.get('province') or ''
-            current_user.extended_data_json['city'] = data.get('city') or ''
+                extended_data.pop("organization_name")
+
+            if data.get("avatar"):
+                avatar = open(data["avatar"], 'rb').read() 
+
+                current_user.avatar = avatar
+
+                extended_data.pop("avatar")
+
+            current_user.extended_data = extended_data
+            current_user.extended_data_json = sanitize_for_jsonb(extended_data)
         else:
             if data.get("permissionPolicy"):
                 current_user.permission_policy = data["permissionPolicy"]
-        
-        current_user.extended_data = current_user.extended_data_json
-        current_user.extended_data_json = sanitize_for_jsonb(current_user.extended_data_json)
 
         db.session.commit()
 
@@ -233,8 +217,7 @@ def user_account_register():
         name = data.get("name")
         organization_type_id = data.get("organizationTypeId")
         organization_name = data.get("organizationName")
-        country = data.get('country')
-        # permission_policy = data.get("permissionPolicy")
+        permission_policy = data.get("permissionPolicy")
 
         if not email:
             raise AppMessageException('please input: email (text mandatory)')
@@ -246,10 +229,8 @@ def user_account_register():
             raise AppMessageException('please input: organizationTypeId (int mandatory)')
         if not organization_name:
             raise AppMessageException('please input: organizationName (text mandatory)')
-        if not country:
-            raise AppMessageException('please input: country (text mandatory)')
-        # if not permission_policy:
-        #     raise AppMessageException('please input: permissionPolicy (int mandatory)')
+        if not permission_policy:
+            raise AppMessageException('please input: permissionPolicy (int mandatory)')
         
         if not re.match(r'[^@]+@[^@]+\.[^@]+', email):
             raise AppMessageException('invalid input format: email')
@@ -257,10 +238,10 @@ def user_account_register():
             organization_type_id = int(organization_type_id)
         except:
             raise AppMessageException('invalid input format: organizationTypeId')
-        # try:
-        #     int(permission_policy)
-        # except:
-        #     raise AppMessageException('invalid input format: permissionPolicy')
+        try:
+            int(permission_policy)
+        except:
+            raise AppMessageException('invalid input format: permissionPolicy')
         
         known_organization_type = Organization.query.filter_by(id=organization_type_id).first()
         if not known_organization_type:
@@ -278,11 +259,10 @@ def user_account_register():
         known_user.name = name
         known_user.organization_type_id = organization_type_id
         known_user.organization_name = organization_name
-        # known_user.permission_policy = permission_policy
+        known_user.permission_policy = permission_policy
         known_user.password = password
-        extended_data = { 'country': str(country).title() }
-        known_user.extended_data = extended_data
-        known_user.extended_data_json = sanitize_for_jsonb(extended_data)
+        known_user.extended_data = {}
+        known_user.extended_data_json = sanitize_for_jsonb({})
         
         known_user.encode_password()
 
@@ -586,44 +566,6 @@ def user_account_reset_password():
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
-@user_apis_blueprint.route('/account/change-password', methods=['POST'])
-@cross_origin()
-def user_account_change_password():
-    g_var.__api_name__ = 'user_account_change_password'
-
-    try:
-        if not current_user.is_authenticated:
-            return make_response(jsonify(app_exception_handler('not logged in', 401)), 401)
-
-        if not request.is_json:
-            raise AppMessageException('please provide json data')
-
-        data = request.get_json()
-
-        old_password = data.get('old_password')
-        new_password = data.get('new_password')
-
-        if not old_password:
-            raise AppMessageException('please input: old_password (text mandatory)')
-        if not new_password:
-            raise AppMessageException('please input: new_password (text mandatory)')
-
-        if not current_user.check_password(old_password):
-            raise AppMessageException('old password does not match')
-
-        current_user.password = new_password
-        current_user.encode_password()
-
-        db.session.add(current_user)
-        db.session.commit()
-
-        return make_response(jsonify(success_handler({}, message='Password changed successfully')), 200)
-    except AppMessageException as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
-    except Exception as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
-
-
 @user_apis_blueprint.route('/ga4-report', methods=['GET'])
 @cross_origin()
 def user_ga4_report():
@@ -664,76 +606,4 @@ def user_ga4_report():
     except Exception as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
-@user_apis_blueprint.route('/account/request', methods=['POST'])
-@cross_origin()
-def user_account_request():
-    g_var.__api_name__ = 'user_account_request'
-    
-    g_var.__log_it__ = True
-    g_var.__session_id__ = None
-    g_var.__description_data__ = {}
-    try:
-        g_var.__request_data__ = request.get_json()
-    except:
-        pass
 
-    try:
-        if not request.is_json:
-            raise AppMessageException('please provide json data')
-        
-        data = request.get_json()
-        
-        email = data.get("email")
-        request_text = data.get("request_text")
-
-        if not email:
-            raise AppMessageException('please input: email (text mandatory)')
-        if not request_text:
-            raise AppMessageException('please input: reason for broader area analysis (text mandatory)')
-        
-        known_user = User.query.filter_by(email=email).first()
-        if known_user:
-            if known_user.is_active:
-                organization_type = Organization.query.filter_by(id=known_user.organization_type_id).first()
-
-                user_request = UserRequests()
-                user_request.email = known_user.id
-                user_request.user_request = request_text
-
-                db.session.add(user_request)
-                db.session.flush()
-                db.session.refresh(user_request)
-                db.session.commit()
-                
-                # prepare mail
-                expires = timedelta(days=1)
-                access_token = create_access_token(identity=known_user.id, expires_delta=expires)
-                
-                mail_ = BaseMail(
-                    to=Settings.find_by_name(name='ADMIN_MAILS').value,
-                    subject=EMailReviewUserRequest.SUBJECT,
-                    template=EMailReviewUserRequest.TEMPLATE,
-                    data={
-                        'user': known_user.to_json(),
-                        'organization_type': organization_type.to_json(),
-                        'reason': request_text,
-                    }
-                )
-                mail_.send_brevo_mail()
-                # end prepare mail
-
-                return make_response(
-                    jsonify(
-                        success_handler(
-                            {},
-                            status_code=201, # HTTPStatus.CREATED.value,
-                            message='Please wait for the NbS Tool Team to confirm your request')
-                        ),
-                        200
-                    )
-        else:
-            raise AppMessageException(f"User is not found") # 400
-    except AppMessageException as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
-    except Exception as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error

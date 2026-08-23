@@ -1,8 +1,0 @@
-# Keep the build context small; .env is NOT excluded because settings.py falls back to it.
-.git
-.gitignore
-__pycache__
-**/__pycache__
-*.pyc
-Dockerfile
-.dockerignore

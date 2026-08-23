@@ -64,8 +64,8 @@ class GeoLogic():
 
         query = '''
         select 
-            project_area, district, province, country, iso_3
-        from sea.v3_adm('{aoi_geom}')
+            project_area, district, province, country 
+        from sea.v1_current_condition_highlight_site_information_adm('{aoi_geom}')
         '''.format(aoi_geom=geom)
 
         dt = GeoUtils.get_db(db.text(query))
@@ -77,7 +77,6 @@ class GeoLogic():
             known_polygons.country = row.get('country')
             known_polygons.province = row.get('province')
             known_polygons.district = row.get('district')
-            known_polygons.iso_3 = row.get('iso_3')
         
         db.session.add(known_polygons)
         db.session.commit()

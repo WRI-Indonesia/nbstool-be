@@ -78,12 +78,6 @@ class DocumentData(db.Model):
     section_3_json = db.Column(JSONB, nullable=True)
     section_4_json = db.Column(JSONB, nullable=True)
     section_5_json = db.Column(JSONB, nullable=True)
-    # v3 template form data (certification_type e.g. 'FeasibilityV3'): `form` holds the F03
-    # socio-economic answers (se* keys), `user_input` the free overrides keyed by template tag
-    # text. Seeded at /bind with analyser prefill, updated on save-draft / next, read by the docx
-    # generation endpoint. The section_* columns above are the v2 CCB shape and stay untouched.
-    form = db.Column(JSONB, nullable=True)
-    user_input = db.Column(JSONB, nullable=True)
  
 
     @classmethod

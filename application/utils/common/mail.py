@@ -87,8 +87,3 @@ class EMailIncubatorsReviewToIncubator():
 class EMailIncubatorsReviewToUser():
     SUBJECT = '[NbS Tool] Project Document Review Submission Confirmation'
     TEMPLATE = 'document_review_user.html'
-
-
-class EMailReviewUserRequest():
-    SUBJECT = '[NbS Tool] Request for Broader Area ANalysis'
-    TEMPLATE = 'user_area_request.html'

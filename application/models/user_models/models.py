@@ -186,13 +186,8 @@ class UserSessions(db.Model):
     is_active = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=get_date)
     project_name = db.Column(db.String(100), nullable = True)
-    project_description = db.Column(db.Text, nullable=True)
 
     is_project = db.Column(db.Boolean, default=False)
-
-    # which analysis engine produced this session's DataAnalyzer payloads: 'v3' once any v3
-    # endpoint persisted, NULL for legacy rows and sessions with no calculation yet
-    analyzer_version = db.Column(db.String(10), nullable=True)
 
     updated_at = db.Column(db.DateTime, onupdate=get_date)
     updated_by = db.Column(db.Integer, default=0)
@@ -208,13 +203,3 @@ class UserSessions(db.Model):
     @classmethod
     def find_by_session_id_is_project(cls, session_id):
         return cls.query.filter_by(session_id=session_id, is_active=1, is_project=True).first()
-
-class UserRequests(db.Model):
-    __tablename__ = "tbl_user_requests"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    user_request = db.Column(db.String(4000), nullable = False)
-
-    @classmethod
-    def find_by_user_id(cls, user_id):
-        return cls.query.filter_by(user_id=user_id).order_by(UserSessions.created_at.desc()).all()

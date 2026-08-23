@@ -92,7 +92,6 @@ class DataAnalyzer(db.Model):
     people_json = db.Column(JSONB, nullable=True)
     benefit_json = db.Column(JSONB, nullable=True)
     intervention_eligibility_json = db.Column(JSONB, nullable=True)
-    threat_json = db.Column(JSONB, nullable=True)
  
     @classmethod
     def find_by_session_id(cls, session_id):

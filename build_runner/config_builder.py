@@ -38,7 +38,6 @@ steps:
     --shielded-integrity-monitoring --shielded-vtpm
     --scopes default,storage-full,cloud-platform,https://www.googleapis.com/auth/drive
     --service-account {service_account}
-    --metadata-from-file startup-script=build_runner/startup-beta.sh
     --container-env PORT={port},{env_args}
     '
   ]
