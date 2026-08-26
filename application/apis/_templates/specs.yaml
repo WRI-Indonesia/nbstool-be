@@ -1371,7 +1371,7 @@ paths:
       description: calculate and retrieve benefit analysis results for the project area
       operationId: getBenefits
 
-  /geos/feature/benefit-v3:
+  /geos/feature/benefit:
     post:
       tags:
         - Geo module

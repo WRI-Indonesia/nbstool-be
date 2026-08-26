@@ -507,7 +507,7 @@ def geo_feature_pathway():
 # persisted result -- it does not gate the quantification (5.2/5.3 follow the notebook and
 # quantify ELIGIBILITY; whether a de-toggled pathway should drop out of the numbers is an open
 # product decision).
-@geo_apis_blueprint.route('/feature/benefit-v3', methods=['POST'])
+@geo_apis_blueprint.route('/feature/benefit', methods=['POST'])
 @cross_origin()
 def geo_feature_benefit_v3():
     g_var.__api_name__ = 'geo_feature_benefit_v3'
