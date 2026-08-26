@@ -1379,103 +1379,31 @@ paths:
       responses:
         "200":
           content:
-            application/json:
+            application/x-ndjson:
               schema:
-                type: object
-                title: BenefitV3Ok
-                required:
-                  - result
-                properties:
-                  result:
-                    type: object
-                    required:
-                      - duration_years
-                      - carbon_project
-                      - carbon_risk
-                      - general_benefit
-                      - avoided_emissions
-                      - arr_sequestration
-                      - net_emission_reduction
-                      - net_carbon_removal
-                      - net_errs
-                      - habitat_loss_avoided
-                      - threatened_species_habitat
-                    properties:
-                      duration_years:
-                        type: integer
-                        examples:
-                          - 30
-                      carbon_project:
-                        type: boolean
-                      carbon_risk:
-                        type: object
-                        description: the deduction percentages this run applied
-                      avoided_emissions:
-                        type: object
-                        description: >-
-                          component 5.2. `applicable` false with the reason in
-                          `narrative` when the AOI has no QB-flagged Protect
-                          area, no rate, or no risk coverage. When applicable,
-                          `values.total_tco2e` is the gross avoided-emissions
-                          headline and `tables.annual_projection` the yearly
-                          curve.
-                      arr_sequestration:
-                        type: object
-                        description: >-
-                          component 5.3, the gross ARR removal 5.5 reads.
-                          `values.total_tco2e` central estimate with
-                          `total_low_tco2e`/`total_high_tco2e` the indicative
-                          range; per-ecosystem and dryland-zone splits in
-                          values; savanna and peatland areas are deferred, not
-                          quantified.
-                      net_emission_reduction:
-                        type:
-                          - object
-                          - "null"
-                        description: >-
-                          component 5.4 -- 5.2's gross total after the leakage
-                          / uncertainty / buffer deductions. Null when
-                          `carbon_project` is off or 5.2 is not applicable
-                          (the notebook's "section deactivated").
-                      net_carbon_removal:
-                        type:
-                          - object
-                          - "null"
-                        description: component 5.5, same shape and gating as
-                          5.4, applied to 5.3's gross removal.
-                      general_benefit:
-                        type: object
-                        description: >-
-                          component 5.1. Per pathway present, the activities
-                          and their benefits split into the three Triple Win
-                          pillars (`values.by_pathway`, plus flat
-                          `tables.activities` / `tables.benefits`).
-                      net_errs:
-                        type:
-                          - object
-                          - "null"
-                        description: >-
-                          component 5.6, the combined Net ERRs headline:
-                          leakage and uncertainty off the combined 5.2+5.3
-                          gross, then the buffer withheld from the ADJUSTED
-                          figure -- deliberately not the sum of 5.4 and 5.5.
-                          Same gating as 5.4/5.5.
-                      habitat_loss_avoided:
-                        type: object
-                        description: >-
-                          component 5.9. Suitable-habitat hectares whose
-                          projected loss the project avoids, on the
-                          deforestation-risk grid, plus the count of species
-                          whose habitat overlaps the projected loss.
-                      threatened_species_habitat:
-                        type: object
-                        description: >-
-                          component 5.10. Per threatened species (CR/EN/VU):
-                          habitat in the AOI and the share projected
-                          deforestation would take (`tables.species`), with
-                          the CR/EN/VU counts and the overall avoided-loss
-                          percentage in `values`.
-          description: Success
+                $ref: "#/components/schemas/SiteCharacterisationLine"
+          description: >-
+            A stream of newline-delimited JSON objects -- the same envelope as
+            the other v3 streams: `preparation` with the plan, one line per
+            component, then `end`. Emission is cheapest-first, so the carbon
+            components all land in the first ~13 s while the two habitat
+            components (~25 s each) are still reading.
+
+            Lines, in emission order: `assumptions` (the run's inputs echoed:
+            duration, carbon_project, carbon_risk, selections), then
+            `general_benefit` (5.1), `avoided_emissions` (5.2),
+            `net_emission_reduction` (5.4), `arr_sequestration` (5.3),
+            `net_carbon_removal` (5.5), `net_errs` (5.6),
+            `threatened_species_habitat` (5.10), `habitat_loss_avoided`
+            (5.9). Each component line's `data` is the whole component
+            result: `applicable`, `narrative`, `tables`, `values`, `flags`.
+
+            With `carbon_project` false, 5.4/5.5/5.6 still emit as
+            not-applicable "deactivated" cards. A component's own permanent
+            caveats (5.2's rate-window warning, 5.3's placeholder-baseline
+            note) surface through `error_status` with state `failed` -- this
+            is the answer, not a retryable fault -- while the line carries
+            its real numbers.
         "400":
           $ref: "#/components/responses/Bad Request"
         "500":
@@ -1483,20 +1411,23 @@ paths:
       parameters: []
       description: >-
         F02-P5 components 5.1 / 5.2 / 5.3 / 5.4 / 5.5 / 5.6 / 5.9 / 5.10
-        (5.7, 5.8, 5.11-5.13 are not ported -- data team's scope).
+        (5.7, 5.8, 5.11-5.13 are not ported -- data team's scope), STREAMED.
 
         THE PATHWAY SCREEN'S "Calculate potential benefit" BUTTON CALLS THIS.
         The JSON body carries the screen's state: `duration_years` (the
         slider), `carbon_project` (the toggle), `leakage` / `uncertainty` /
         `buffer` (the Carbon Risk Assumption inputs), and `selections` -- the
         per-ecosystem pathway toggles and chosen activity ids. Selections are
-        echoed into the persisted result (they feed the document templates'
-        Chosen NbS Activities and the F05 monitoring flow); they do NOT gate
-        the quantification -- 5.2/5.3 quantify eligibility as the notebook
-        does. Avoided deforestation emissions on the Protect area
-        (ranked-risk allocation of a compounding baseline loss), ex-ante ARR
-        removal on the Restore area (ANX-B yield-curve method), and both
-        figures net of the carbon-risk deductions.
+        echoed on the `assumptions` line and persisted (they feed the
+        document templates' Chosen NbS Activities and the F05 monitoring
+        flow); they do NOT gate the quantification -- 5.2/5.3 quantify
+        eligibility as the notebook does.
+
+        RETRY: the endpoint is POST, so lines carry no `retry_url`; re-POST
+        the same body with `process: ["<name>", ...]` to re-run and re-emit
+        only those components (their dependencies re-run un-emitted).
+        Validation failures (deductions outside 1-100, sum over 100) are a
+        400 before the stream opens.
 
         5.2 reads the deforestation rate from the session's persisted
         site-characterisation result; run that first or 5.2 reports
@@ -1504,9 +1435,11 @@ paths:
         notebook: the 15% leakage default is an optional conservative
         default, not a universal minimum, and the official buffer-pool
         contribution must be determined with the Verra AFOLU Non-Permanence
-        Risk Tool at validation. Results persist to the session's analyser
-        row and feed the feasibility document's carbon figures.
-      operationId: postBenefitV3
+        Risk Tool at validation. Every line persists into the session's
+        analyser row under its process name, so the stored shape matches the
+        old single-document response and the feasibility document reads it
+        unchanged.
+      operationId: postBenefit
       requestBody:
         content:
           application/json:
@@ -1527,8 +1460,9 @@ paths:
                 carbon_project:
                   type: boolean
                   default: true
-                  description: the NbS-carbon-project toggle; false disables
-                    5.4, 5.5 and 5.6 (also accepts "yes"/"no" strings)
+                  description: the NbS-carbon-project toggle; false turns
+                    5.4, 5.5 and 5.6 into deactivated cards (also accepts
+                    "yes"/"no" strings)
                 leakage:
                   type: number
                   default: 15.0
@@ -1541,8 +1475,8 @@ paths:
                   default: 10.0
                   minimum: 1
                   maximum: 100
-                  description: uncertainty deduction, percent; outside 1-100 is
-                    a 400
+                  description: uncertainty deduction, percent; outside 1-100
+                    is a 400
                 buffer:
                   type: number
                   default: 12.0
@@ -1557,12 +1491,18 @@ paths:
                   enum: [1, 2, 3]
                   description: the ecosystem 5.9 and 5.10 assess -- 1 forest,
                     2 mangrove, 3 peatland
+                process:
+                  type: array
+                  items:
+                    type: string
+                  description: re-run and re-emit only these components (the
+                    retry path); omit for a full run
                 selections:
                   type: object
                   description: >-
                     the screen's per-ecosystem pathway toggles and chosen
                     activity ids, keyed forest / mangrove / peatland. Echoed
-                    into the persisted result; not used in the
+                    on the `assumptions` line and persisted; not used in the
                     quantification.
                   examples:
                     - forest:
@@ -1570,11 +1510,6 @@ paths:
                         manage: false
                         restore: true
                         activities: ["111", "321"]
-                      mangrove:
-                        protect: true
-                        manage: false
-                        restore: false
-                        activities: []
         required: true
 
   /geos/feature/data-analyzer:

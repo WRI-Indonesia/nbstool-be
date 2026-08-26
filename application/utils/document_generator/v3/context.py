@@ -458,8 +458,10 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
 
     # Pathway-screen choices, persisted with the benefit run: {forest|mangrove|peatland:
     # {protect|manage|restore: bool, activities: [activity ids]}}. Used when the F05 plan has
-    # not been saved yet -- the plan is the richer, later source and wins.
-    selections = benefit.get("selections") or {}
+    # not been saved yet -- the plan is the richer, later source and wins. The streaming
+    # endpoint persists them under its `assumptions` line; the flat key is the older shape.
+    selections = ((benefit.get("assumptions") or {}).get("selections")
+                  or benefit.get("selections") or {})
 
     ecos = []
     cards = {e.get("label"): e for e in pathway.get("ecosystems", []) if isinstance(e, dict)}

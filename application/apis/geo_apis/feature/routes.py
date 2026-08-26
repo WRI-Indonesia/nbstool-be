@@ -28,7 +28,8 @@ from ....utils.geos import GeoUtils
 # from ....utils.geos.current_condition import process_input_data_analyzer_result
 # from ....utils.geos.benefit import run_benefit
 from ....utils.geos.v3.common import prepare_aoi_from_session, to_jsonable
-from ....utils.geos.v3.benefit.run_benefit import run_benefit
+from ....utils.geos.v3.benefit.run_benefit import stream_benefit
+from ....utils.geos.v3.benefit.run_benefit import validate as benefit_validate
 from ....utils.geos.v3.pathway.run_pathway import run_pathway
 from ....utils.geos.v3.run_analysis import COMPONENTS as ANALYSIS_COMPONENTS
 from ....utils.geos.v3.run_analysis import stream_analysis
@@ -494,7 +495,9 @@ def geo_feature_pathway():
 
 
 # v3: F02-P5 Benefit, carbon components 5.2 / 5.3 / 5.4 / 5.5. A PLAIN JSON RESPONSE like
-# pathway: two raster analyses plus two subtractions, nothing to stream.
+# STREAMED like the analysis endpoints: the carbon components land in the first ~6 s while the
+# two habitat components (~25 s each) are still reading, so the cards render progressively
+# instead of waiting ~30 s for one document.
 #
 # 5.2 needs the deforestation rate from a completed site-characterisation run, read from the
 # persisted DataAnalyzer row -- absent, 5.2 reports not-applicable rather than failing, exactly
@@ -547,29 +550,48 @@ def geo_feature_benefit_v3():
         if selections is not None and not isinstance(selections, dict):
             raise AppMessageException('fail, selections must be an object keyed by ecosystem')
 
+        # Partial re-runs: `process` in the body names the components to re-emit, mirroring the
+        # `?process=` contract of the GET streams. The endpoint is POST, so `retry_url` on the
+        # lines stays null; a client re-POSTs the same body with this list instead.
+        wanted = payload.get('process') or None
+        if wanted:
+            from ....utils.geos.v3.benefit.run_benefit import _W as _BENEFIT_NAMES
+            unknown = [n for n in wanted
+                       if n not in _BENEFIT_NAMES or n == 'activity_stage']
+            if unknown:
+                raise AppMessageException(f"fail, unknown process: {', '.join(unknown)}")
+
+        # Validation fires BEFORE the stream opens, so bad inputs are still an honest 400.
+        try:
+            benefit_validate(duration_years,
+                             leakage if leakage is not None else 15.0,
+                             uncertainty if uncertainty is not None else 10.0,
+                             buffer if buffer is not None else 12.0)
+        except ValueError as e:
+            raise AppMessageException(f'fail, {e}')
+
         analyzer = DataAnalyzer.find_by_session_id(session_id)
         site = (analyzer.site_information_json if analyzer else None) or {}
         rate_pct = site.get('historical_deforestation_percentage')
 
         aoi = prepare_aoi_from_session(session_id)
-        try:
-            result = run_benefit(aoi, duration_years, rate_pct, carbon_project,
-                                 leakage, uncertainty, buffer, ecosystem_class)
-        except ValueError as e:
-            raise AppMessageException(f'fail, {e}')
-
-        # The screen's pathway/activity choices ride along with the run they produced, so the
-        # document templates and F05 can read the CHOSEN activities from the analyser row.
-        if selections is not None:
-            result['selections'] = selections
-
-        save_v3_sections(session_id, {'benefit_json': result})
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
-    return make_response(jsonify(success_handler({'result': result})), 200)
+    # Every line persists into benefit_json under its process name -- the same underscore keys
+    # the old single-document response used, so the stored shape and its readers are unchanged.
+    lines = _limit_slots(persist_ndjson(
+        stream_benefit(aoi, duration_years, rate_pct, carbon_project,
+                       leakage, uncertainty, buffer, ecosystem_class,
+                       selections, wanted),
+        session_id, lambda name: ('benefit_json', True)))
+
+    return Response(
+        stream_with_context(lines),
+        mimetype='application/x-ndjson',
+    )
 
 
 # off: v2 intervention eligibility, read the v2 current-condition data.
