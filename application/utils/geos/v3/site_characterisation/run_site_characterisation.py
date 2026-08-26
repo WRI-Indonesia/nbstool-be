@@ -79,7 +79,6 @@ try:
     from .general.administrative_boundaries import analyze_admin_boundaries
     from .general.ecosystem_type import analyze_ecosystem_type
     from .general.historical_deforestation import analyze_historical_deforestation
-    from .general.indigenous_territory import analyze_indigenous_territory
     from .general.land_cover import analyze_land_cover
     from .general.natural_disaster_risk import analyze_natural_risk
     from .general.protected_areas_wdpa import analyze_protected_areas
@@ -118,7 +117,6 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from habitat_area import analyze_habitat_area
     from historical_burned_area import analyze_historical_burned_area
     from historical_deforestation import analyze_historical_deforestation
-    from indigenous_territory import analyze_indigenous_territory
     from key_biodiversity_areas import analyze_kba
     from key_species_presence import analyze_key_species
     from land_cover import analyze_land_cover
@@ -199,7 +197,6 @@ _UNORDERED: dict[str, tuple] = {
     'deforestation risk':         (_risk_after_admin, ('administrative boundaries',)),
     'natural disaster risks':     (analyze_natural_risk, ()),
     'land cover':                 (analyze_land_cover, ()),
-    'indigenous territory':       (analyze_indigenous_territory, ()),
     # Nature, 2.1 / 2.2 / 2.3 / 2.5 / 2.6 plus endangered trees
     'forest landscape integrity': (analyze_flii, ()),
     'key biodiversity areas':     (analyze_kba, ()),

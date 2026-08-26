@@ -36,7 +36,6 @@ try:
     from .deforestation_risk import analyze_deforestation_risk
     from .ecosystem_type import analyze_ecosystem_type
     from .historical_deforestation import analyze_historical_deforestation
-    from .indigenous_territory import analyze_indigenous_territory
     from .land_cover import analyze_land_cover
     from .natural_disaster_risk import analyze_natural_risk
     from .protected_areas_wdpa import analyze_protected_areas
@@ -51,7 +50,6 @@ except ImportError:  # `python run_general.py`: no package around it
     from deforestation_risk import analyze_deforestation_risk
     from ecosystem_type import analyze_ecosystem_type
     from historical_deforestation import analyze_historical_deforestation
-    from indigenous_territory import analyze_indigenous_territory
     from land_cover import analyze_land_cover
     from natural_disaster_risk import analyze_natural_risk
     from pipeline import after, component_count, error_status, safe, stream
@@ -76,9 +74,6 @@ processes = [
     {'name': 'deforestation risk', 'w': 2.2},
     {'name': 'natural disaster risks', 'w': 3.7},
     {'name': 'land cover', 'w': 3.7},
-    # Not a notebook component; added for the report templates. One indexed vector query plus a
-    # dissolve, the same shape of work as protected areas, so it carries the same weight.
-    {'name': 'indigenous territory', 'w': 1.2},
     {'name': 'end', 'w': 0.1},
 ]
 
@@ -132,7 +127,6 @@ def _run_components(aoi: AOI):
             pool.submit(after, 'deforestation risk', _risk_after_admin, aoi, admin),
             pool.submit(safe, 'natural disaster risks', analyze_natural_risk, aoi),
             pool.submit(safe, 'land cover', analyze_land_cover, aoi),
-            pool.submit(safe, 'indigenous territory', analyze_indigenous_territory, aoi),
         )
 
         for future in futures:

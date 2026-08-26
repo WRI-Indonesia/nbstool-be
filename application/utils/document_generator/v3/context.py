@@ -141,8 +141,6 @@ def _site_characterisation_tags(si: dict, pathway: dict) -> dict:
     ])
     tags["Site Characterisation: Flood/Tropical typhoon/Landslide/Drought/Fire risk"] = risks
     tags["Site Characterisation: Flood / Tropical typhoon / Landslide / Drought / Fire risk"] = risks
-    tags["Site Characterisation: name of majority indigenous territory"] = si.get(
-        "majority_indigenous_territory")
 
     return tags
 
@@ -366,6 +364,21 @@ def _people_tags(people: dict) -> dict:
     return tags
 
 
+def _benefit_pillar_counts(benefit: dict) -> dict:
+    """Distinct 5.1 benefits per Triple Win pillar, across every pathway -- the template's
+    "x Nature / x People / x Climate sub-components scored". Unfilled -> literal bracket text."""
+    by_pathway = ((benefit.get("general_benefit") or {}).get("values", {})
+                  .get("by_pathway") or {})
+    counts = {}
+    for pillar in ("nature", "people", "climate"):
+        distinct: set = set()
+        for slot in by_pathway.values():
+            distinct.update((slot.get("benefits") or {}).get(pillar) or [])
+        counts[f"benefit_{pillar}_count"] = (
+            str(len(distinct)) if by_pathway else "[Potential Benefit: x]")
+    return counts
+
+
 def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
     """The docxtpl context: `t` lookup, loop lists and condition flags.
 
@@ -379,8 +392,29 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
     people = (analyzer.people_json if analyzer else None) or {}
     threat = (analyzer.threat_json if analyzer else None) or {}
     pathway = ((analyzer.intervention_eligibility_json if analyzer else None) or {})
+    benefit = (getattr(analyzer, "benefit_json", None) if analyzer else None) or {}
+
+    # F02-P5 carbon figures. Net (after carbon-risk deductions) when the project ran as an NbS
+    # carbon project, else the gross component totals. Missing entirely -> tags stay unfilled.
+    def _carbon(net_key, gross_key):
+        net = (benefit.get(net_key) or {}).get("values", {}).get("net_tco2e")
+        if net is not None:
+            return net
+        gross = benefit.get(gross_key) or {}
+        return gross.get("values", {}).get("total_tco2e") if gross.get("applicable") else None
+
+    benefit_avoided = _carbon("net_emission_reduction", "avoided_emissions")
+    benefit_sequestered = _carbon("net_carbon_removal", "arr_sequestration")
+    # 5.6's combined Net ERRs is the headline total when present (buffer taken on the adjusted
+    # figure there, so it is NOT the sum of the 5.4/5.5 nets).
+    net_errs_total = (benefit.get("net_errs") or {}).get("values", {}).get("net_tco2e")
 
     tags: dict[str, object] = {}
+    if net_errs_total is not None:
+        tags["Potential Benefit: total carbon stock stored"] = _ha(net_errs_total)
+    elif benefit_avoided is not None or benefit_sequestered is not None:
+        tags["Potential Benefit: total carbon stock stored"] = _ha(
+            (benefit_avoided or 0.0) + (benefit_sequestered or 0.0))
     tags.update(_site_characterisation_tags(si, pathway))
     tags.update(_burned_area_tags(climate))
     tags.update(_threat_tags(threat))
@@ -409,6 +443,71 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
         for c in named[3:]
     ]
 
+    # Per-ecosystem blocks for the Monitoring Plan tables (see convert.MONITORING_OCCURRENCES):
+    # always exactly 3 entries in the pathway card order Forest, Mangrove, Peatland.
+    #
+    # Activities and indicator rows come from the F05 monitoring form when it was saved
+    # (`form.mpPlan`, the frontend's collectPlan shape: ecos[].activities[].{name, pw, groups[]
+    # .{benefit, cat, items[].{label, source, freq, unit?}}}). Without a plan, the pathway's
+    # AVAILABLE activity list per intervention stands in and the indicator tables stay empty;
+    # a missing pathway run leaves literal bracket text, same as any unfilled tag.
+    plan_ecos = {}
+    for eco in ((form or {}).get("mpPlan") or {}).get("ecos") or []:
+        if isinstance(eco, dict):
+            plan_ecos[str(eco.get("id") or eco.get("name") or "").lower()] = eco
+
+    # Pathway-screen choices, persisted with the benefit run: {forest|mangrove|peatland:
+    # {protect|manage|restore: bool, activities: [activity ids]}}. Used when the F05 plan has
+    # not been saved yet -- the plan is the richer, later source and wins.
+    selections = benefit.get("selections") or {}
+
+    ecos = []
+    cards = {e.get("label"): e for e in pathway.get("ecosystems", []) if isinstance(e, dict)}
+    for label, plan_key in (("Forest", "forest"), ("Mangrove", "mangrove"),
+                            ("Peatland", "peatland")):
+        card = cards.get(label) or {}
+        interventions = {i.get("intervention"): i for i in card.get("interventions", [])}
+        plan = plan_ecos.get(plan_key) or {}
+        plan_activities = [a for a in plan.get("activities", []) if isinstance(a, dict)]
+
+        entry = {"label": label}
+        names: list = []
+        for name in ("Protect", "Manage", "Restore"):
+            intervention = interventions.get(name) or {}
+            entry[f"{name.lower()}_ha"] = (
+                _ha(intervention.get("area_ha"))
+                or "[NbS Pathway: hectare area eligible to " + name.lower() + "]")
+            chosen = [a.get("name") for a in plan_activities
+                      if str(a.get("pw", "")).upper() == name.upper() and a.get("name")]
+            available_entries = [a for a in intervention.get("activities", [])
+                                 if a.get("activity")]
+            available = [a.get("activity") for a in available_entries]
+            if not chosen:
+                selection = selections.get(plan_key) or {}
+                if selection.get(name.lower()):
+                    ids = {str(i) for i in (selection.get("activities") or [])}
+                    chosen = [a["activity"] for a in available_entries
+                              if not ids or str(a.get("activity_id")) in ids]
+            acts = chosen or available
+            entry[f"activities_{name.lower()}"] = _join(acts) or "[NbS Pathway: Chosen NbS Activities]"
+            names.extend(a for a in acts if a not in names)
+        entry["activities_all"] = _join(names) or "[NbS Pathway: Chosen NbS Activities]"
+
+        entry["indicator_rows"] = [
+            {
+                "category": group.get("cat") or "",
+                "benefit": group.get("benefit") or "",
+                "indicator": item.get("label") or "",
+                "unit": item.get("unit") or "",
+                "freq": item.get("freq") or "",
+                "source": item.get("source") or "",
+            }
+            for activity in plan_activities
+            for group in activity.get("groups", []) if isinstance(group, dict)
+            for item in group.get("items", []) if isinstance(item, dict)
+        ]
+        ecos.append(entry)
+
     species_rows = [
         {"taxon_class": s.get("taxon_class"), "scientific_name": s.get("scientific_name"),
          "redlist_category": s.get("redlist_category")}
@@ -420,4 +519,18 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
         "land_cover_rest": land_cover_rest,
         "species_rows": species_rows,
         "keystone_present": bool(nature.get("key_species")),
+        # Flat names, not a subscripted list: the converter's expressions must stay bracket-free
+        # (see convert._eco_field).
+        "eco0": ecos[0],
+        "eco1": ecos[1],
+        "eco2": ecos[2],
+        # Occurrence-routed by the feasibility converter: odd `X tonnes` = avoided, even =
+        # sequestered. Unfilled -> the literal bracket text, same as any other tag.
+        "benefit_avoided_tco2e": (
+            _ha(benefit_avoided) if benefit_avoided is not None
+            else "[Potential Benefit: X tonnes]"),
+        "benefit_sequestered_tco2e": (
+            _ha(benefit_sequestered) if benefit_sequestered is not None
+            else "[Potential Benefit: X tonnes]"),
+        **_benefit_pillar_counts(benefit),
     }

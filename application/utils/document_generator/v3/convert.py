@@ -69,18 +69,42 @@ LOOP_ROWS = [
 REPEAT_NOTE = "(rows repeat"
 
 
-def _to_jinja(text: str) -> str:
-    """Bracket placeholders in one text blob -> jinja, conditionals first."""
+_WS = re.compile(r"\s+")
+
+
+def _norm(tag: str) -> str:
+    return _WS.sub(" ", tag).strip()
+
+
+def _to_jinja(text: str, counters: dict | None = None, occurrences: dict | None = None) -> str:
+    """Bracket placeholders in one text blob -> jinja, conditionals first.
+
+    `occurrences` maps a normalised tag to `fn(n) -> jinja expression or None`, where `n` is the
+    tag's 1-based occurrence number in DOCUMENT ORDER (tracked in `counters`, shared across the
+    whole document). The Monitoring Plan repeats the same tag text once per ecosystem block, so
+    only the position can say which ecosystem a given occurrence belongs to. None falls back to
+    the generic `t()` lookup.
+    """
 
     def _cond(match):
         flag = CONDITIONS.get(match.group(1).strip())
         # An unknown condition stays literal, visible in the output rather than silently eaten.
         return "{%% if %s %%}" % flag if flag else match.group(0)
 
+    def _tag(match):
+        tag = match.group(1)
+        key = _norm(tag)
+        if occurrences is not None and key in occurrences:
+            counters[key] = counters.get(key, 0) + 1
+            expr = occurrences[key](counters[key])
+            if expr is not None:
+                return "{{ %s }}" % expr
+        # Escape quotes inside the tag text so the jinja string literal survives.
+        return '{{ t("%s") }}' % tag.replace('"', '\\"')
+
     text = ONLY_IF.sub(_cond, text)
     text = END_ONLY_IF.sub("{% endif %}", text)
-    # Escape quotes inside the tag text so the jinja string literal survives.
-    return BRACKET.sub(lambda m: '{{ t("%s") }}' % m.group(1).replace('"', '\\"'), text)
+    return BRACKET.sub(_tag, text)
 
 
 def _rewrite_paragraph(paragraph, new_text: str) -> None:
@@ -98,14 +122,20 @@ def _rewrite_paragraph(paragraph, new_text: str) -> None:
         run._element.getparent().remove(run._element)
 
 
-def _convert_paragraphs(paragraphs) -> None:
+def _convert_paragraphs(paragraphs, counters=None, occurrences=None) -> None:
     for paragraph in paragraphs:
         text = paragraph.text
         if "[" in text or "]" in text:
-            _rewrite_paragraph(paragraph, _to_jinja(text))
+            _rewrite_paragraph(paragraph, _to_jinja(text, counters, occurrences))
 
 
 def _iter_cell_paragraphs(table):
+    """Cell paragraphs in reading order: rows top to bottom, cells left to right.
+
+    A merged cell appears once per grid slot, so its paragraphs can be yielded more than once.
+    That is safe -- including for the occurrence counters -- because conversion strips every
+    bracket on the first visit and `_convert_paragraphs` skips bracket-free text.
+    """
     for row in table.rows:
         for cell in row.cells:
             yield from cell.paragraphs
@@ -176,24 +206,127 @@ def _first_paragraph_text(tr, text: str) -> None:
     p.append(r)
 
 
-def convert(source_path: str, output_path: str) -> None:
-    doc = Document(source_path)
+# The Monitoring Plan's ecosystem tables repeat identical tags once per ecosystem block, so
+# each occurrence is routed by position into the `ecos` context list (3 entries, pathway card
+# order: Forest, Mangrove, Peatland). Occurrence numbers are DOCUMENT ORDER, template-wide:
+# occurrence 1 of each tag sits in the "Project Activity Type & Land Area" paragraph and stays
+# generic; the tables follow. Re-derive these rules if the doc team restructures the template.
+# Expressions must stay BRACKET-FREE (`eco0.label`, never `ecos[0].label`): a merged table cell
+# is visited once per grid slot, and a revisit re-converts any text still containing `[`, which
+# would wrap the index of a subscripted expression in a nested tag.
+def _eco_field(field):
+    #  n == 1: the prose paragraph -> generic. n in 2..7: two tables x 3 blocks -> (n-2) % 3.
+    return lambda n: None if n == 1 else "eco%d.%s" % ((n - 2) % 3, field)
 
+
+def _chosen_activities(n):
+    # n == 1: prose. n in 2..10: Selected Activities table, 3 blocks x Protect/Manage/Restore.
+    # n in 11..13: Monitoring Indicators, one per ecosystem, all interventions merged.
+    if n == 1:
+        return None
+    if n <= 10:
+        intervention = ("protect", "manage", "restore")[(n - 2) % 3]
+        return "eco%d.activities_%s" % ((n - 2) // 3, intervention)
+    return "eco%d.activities_all" % (n - 11)
+
+
+# The feasibility template repeats `[Potential Benefit: X tonnes]` in avoided/sequestered pairs
+# ("X tonnes avoided ... X tonnes sequestered", twice: Net Carbon Removal Estimates and Technical
+# Feasibility). Occurrence 1 is the tag's own row in the draft's Data Tag Reference table and
+# stays generic; after it, even occurrences are the avoided figure and odd ones the sequestered
+# figure. Re-derive if the doc team drops the reference table from the draft.
+FEASIBILITY_OCCURRENCES = {
+    "Potential Benefit: X tonnes": lambda n: (
+        None if n == 1
+        else "benefit_avoided_tco2e" if n % 2 == 0 else "benefit_sequestered_tco2e"),
+    # "x Nature sub-components, x People sub-components and x Climate sub-components scored" --
+    # occurrence 1 is again the tag's row in the Data Tag Reference table.
+    "Potential Benefit: x": lambda n: (
+        None if n == 1
+        else ("benefit_nature_count", "benefit_people_count",
+              "benefit_climate_count")[(n - 2) % 3]),
+}
+
+MONITORING_OCCURRENCES = {
+    "Threat: Forest / Mangrove / Peatland": _eco_field("label"),
+    "NbS Pathway: hectare area eligible to protect": _eco_field("protect_ha"),
+    "NbS Pathway: hectare area eligible to manage": _eco_field("manage_ha"),
+    "NbS Pathway: hectare area eligible to restore": _eco_field("restore_ha"),
+    "NbS Pathway: Chosen NbS Activities": _chosen_activities,
+}
+
+# The "Monitoring Indicators, Methods and Frequency" tables are header-only in the draft -- no
+# data row and no tags -- so a loop row is INJECTED per table. The three tables appear in
+# ecosystem order (Dryland, Mangrove, Peatland), matching eco0..eco2. Column order mirrors the
+# draft's header: Benefit Category | Benefit | Indicators | Unit | frequency | Methodology.
+INDICATOR_HEADER = "Benefit Category"
+INDICATOR_COLUMNS = ("category", "benefit", "indicator", "unit", "freq", "source")
+
+
+def _inject_indicator_rows(doc) -> int:
+    """Append `{%tr for i in ecoN.indicator_rows %}` + data row + endfor to each indicator
+    table, in document order. Returns how many tables were wired."""
+    count = 0
     for table in doc.tables:
-        _convert_loop_rows(table)
-        _convert_paragraphs(_iter_cell_paragraphs(table))
+        # The header row that names the columns is the one containing INDICATOR_HEADER (it may
+        # sit below a title row); clone it as the shape template so the injected row inherits
+        # the table's grid and formatting.
+        template_row = next((r for r in table.rows
+                             if any(INDICATOR_HEADER in c.text for c in r.cells)), None)
+        if template_row is None:
+            continue
 
-    _convert_paragraphs(doc.paragraphs)
+        data_tr = _control_row(template_row)
+        template_row._tr.getparent().append(data_tr)
+        for cell_tc, field in zip(data_tr.findall(f"{_NS}tc"), INDICATOR_COLUMNS):
+            p = cell_tc.find(f"{_NS}p")
+            r = p.makeelement(f"{_NS}r", {})
+            t = p.makeelement(f"{_NS}t", {})
+            t.text = "{{ i.%s }}" % field
+            r.append(t)
+            p.append(r)
+
+        open_tr = _control_row(template_row)
+        data_tr.addprevious(open_tr)
+        _first_paragraph_text(open_tr, "{%%tr for i in eco%d.indicator_rows %%}" % count)
+
+        close_tr = _control_row(template_row)
+        data_tr.addnext(close_tr)
+        _first_paragraph_text(close_tr, "{%tr endfor %}")
+        count += 1
+    return count
+
+
+def convert(source_path: str, output_path: str, occurrences: dict | None = None) -> None:
+    doc = Document(source_path)
+    counters: dict = {}
+
+    # Body content in DOCUMENT ORDER -- occurrence counting depends on it. Loop rows are wrapped
+    # before a table's paragraphs are converted, so the loop cells get their own expressions.
+    for block in doc.iter_inner_content():
+        if hasattr(block, "rows"):          # a Table
+            _convert_loop_rows(block)
+            _convert_paragraphs(_iter_cell_paragraphs(block), counters, occurrences)
+        else:                               # a Paragraph
+            _convert_paragraphs([block], counters, occurrences)
 
     for section in doc.sections:
-        _convert_paragraphs(section.header.paragraphs)
-        _convert_paragraphs(section.footer.paragraphs)
+        _convert_paragraphs(section.header.paragraphs, counters, occurrences)
+        _convert_paragraphs(section.footer.paragraphs, counters, occurrences)
+
+    if occurrences is MONITORING_OCCURRENCES:
+        _inject_indicator_rows(doc)
 
     doc.save(output_path)
 
 
 if __name__ == "__main__":
-    src = sys.argv[1] if len(sys.argv) > 1 else "assets/Feasibility Study_Template Draft.docx"
-    out = sys.argv[2] if len(sys.argv) > 2 else "assets/feasibility_v3_template.docx"
-    convert(src, out)
-    print(f"converted: {src} -> {out}")
+    if len(sys.argv) > 1 and sys.argv[1] == "monitoring":
+        convert("assets/Monitoring Plan_Template Draft.docx",
+                "assets/monitoring_v3_template.docx", MONITORING_OCCURRENCES)
+        print("converted: monitoring -> assets/monitoring_v3_template.docx")
+    else:
+        src = sys.argv[1] if len(sys.argv) > 1 else "assets/Feasibility Study_Template Draft.docx"
+        out = sys.argv[2] if len(sys.argv) > 2 else "assets/feasibility_v3_template.docx"
+        convert(src, out, FEASIBILITY_OCCURRENCES)
+        print(f"converted: {src} -> {out}")

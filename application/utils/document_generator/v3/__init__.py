@@ -17,12 +17,13 @@ from docxtpl import DocxTemplate
 from .context import build_context
 
 FEASIBILITY_TEMPLATE = "assets/feasibility_v3_template.docx"
+MONITORING_TEMPLATE = "assets/monitoring_v3_template.docx"
 OUTPUT_FOLDER = "generated-file/docx-v3/"
 
 
-def generate_feasibility_v3(session_id: str, analyzer, form: dict | None,
-                            user_input: dict | None) -> str:
-    """Render the feasibility docx for one session. Returns the saved file path.
+def _generate(template_path: str, suffix: str, session_id: str, analyzer,
+              form: dict | None, user_input: dict | None) -> str:
+    """Render one template for one session. Returns the saved file path.
 
     Unfilled tags render as their literal `[bracket]` text on purpose: the team fills those
     manually in the output document.
@@ -31,9 +32,19 @@ def generate_feasibility_v3(session_id: str, analyzer, form: dict | None,
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    output_path = os.path.join(OUTPUT_FOLDER, f"{session_id}-{stamp}-feasibility.docx")
+    output_path = os.path.join(OUTPUT_FOLDER, f"{session_id}-{stamp}-{suffix}.docx")
 
-    doc = DocxTemplate(FEASIBILITY_TEMPLATE)
+    doc = DocxTemplate(template_path)
     doc.render(context)
     doc.save(output_path)
     return output_path
+
+
+def generate_feasibility_v3(session_id: str, analyzer, form: dict | None,
+                            user_input: dict | None) -> str:
+    return _generate(FEASIBILITY_TEMPLATE, "feasibility", session_id, analyzer, form, user_input)
+
+
+def generate_monitoring_v3(session_id: str, analyzer, form: dict | None,
+                           user_input: dict | None) -> str:
+    return _generate(MONITORING_TEMPLATE, "monitoring", session_id, analyzer, form, user_input)

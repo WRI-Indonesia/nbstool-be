@@ -115,6 +115,9 @@ def documents_get_document_download_docx():
         elif known_document.document_type == 'FeasibilityV3':
             folder_path = 'generated-file/docx-v3/'
             client_name = "Feasibility Study.docx"
+        elif known_document.document_type == 'MonitoringV3':
+            folder_path = 'generated-file/docx-v3/'
+            client_name = "Monitoring Plan.docx"
         else:
             folder_path = 'generated-file/docx/'
             client_name = "Preliminary Assessment Document.docx"

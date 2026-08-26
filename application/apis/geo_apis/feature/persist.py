@@ -25,13 +25,14 @@ from ....utils.geos.v3.site_characterisation.climate.run_climate import processe
 from ....utils.geos.v3.site_characterisation.general.run_general import processes as general_processes
 from ....utils.geos.v3.site_characterisation.nature.run_nature import processes as nature_processes
 from ....utils.geos.v3.site_characterisation.people.run_people import processes as people_processes
+from ....utils.geos.v3.threat.run_threat import processes as threat_processes
 
 logger = logging.getLogger(__name__)
 
-# component name -> DataAnalyzer column, derived from the module process lists so a component
-# added to a module lands in the right column without a change here
+# component name -> (DataAnalyzer column, nested), derived from the module process lists so a
+# component added to a module lands in the right column without a change here
 SITECHAR_COLUMNS = {
-    p['name']: column
+    p['name']: (column, False)
     for module_processes, column in (
         (general_processes, 'site_information_json'),
         (nature_processes, 'nature_json'),
@@ -39,6 +40,14 @@ SITECHAR_COLUMNS = {
         (people_processes, 'people_json'),
     )
     for p in module_processes[1:-1]
+}
+
+# The whole union stream (/feature/analysis): site characterisation flat into its four columns,
+# threat nested per tab, pathway as one document.
+ANALYSIS_COLUMNS = {
+    **SITECHAR_COLUMNS,
+    **{p['name']: ('threat_json', True) for p in threat_processes[1:-1]},
+    'pathway': ('intervention_eligibility_json', False),
 }
 
 
@@ -75,13 +84,14 @@ def save_v3_sections(session_id: str, updates: dict):
     db.session.commit()
 
 
-def persist_ndjson(lines, session_id: str, column_for, nest_by_process: bool = False):
+def persist_ndjson(lines, session_id: str, spec_for):
     """Tee an NDJSON stream: yield every line unchanged, accumulate each component's `data`,
     save once on the `end` line.
 
-    `column_for` maps a process name to a column (None skips the line). `nest_by_process` stores
-    `{process: data}` instead of merging `data` flat -- threat's four sections reuse field names
-    like `total_area_ha`, so they must not share a namespace.
+    `spec_for` maps a process name to `(column, nested)` -- or None to skip the line. `nested`
+    stores `{process: data}` instead of merging `data` flat: threat's four sections reuse field
+    names like `total_area_ha`, so they must not share a namespace, while the flat stages'
+    keys never collide.
 
     A crashed component (`data: {}`) is skipped, so it never wipes a stored value. Saving only at
     `end` means a dropped connection persists nothing, which is what its retry expects. A save
@@ -98,7 +108,8 @@ def persist_ndjson(lines, session_id: str, column_for, nest_by_process: bool = F
                 db.session.rollback()
                 logger.exception('failed to persist v3 results for session %s', session_id)
         elif process != 'preparation' and data:
-            column = column_for(process)
-            if column:
-                updates[column] = _merge(updates.get(column), {process: data} if nest_by_process else data)
+            spec = spec_for(process)
+            if spec:
+                column, nested = spec
+                updates[column] = _merge(updates.get(column), {process: data} if nested else data)
         yield line

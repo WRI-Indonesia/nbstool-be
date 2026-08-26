@@ -1122,6 +1122,65 @@ paths:
         is an ordinary 500. Typical response ~3.5 s.
       operationId: getPathway
 
+  /geos/feature/analysis:
+    get:
+      tags:
+        - Geo module
+      summary: get full analysis (union stream)
+      responses:
+        "200":
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/SiteCharacterisationLine"
+          description: >-
+            A stream of newline-delimited JSON objects -- the same envelope as
+            `/geos/feature/site-characterisation`, one line per component,
+            `preparation` first and `end` last. 30 components: the 25
+            site-characterisation cards, the 4 threat tabs, and `pathway`.
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - name: process
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: >-
+            re-run only these components, any mix across the three stages --
+            names are unique union-wide, so the same retry contract as
+            site-characterisation covers everything: a failed line's
+            `error_status.retry_url` points back at this endpoint.
+      description: >-
+        THE ONE ANALYSIS CALL THE FRONTEND MAKES AFTER THE POLYGON: F02-P2
+        site characterisation, F02-P3 threat and F02-P4 pathway as a single
+        NDJSON stream. The individual endpoints remain for tooling and
+        single-stage runs, but product screens read this union and pick the
+        lines they need as they arrive -- emission is cheapest-first across
+        all three stages, so the fast cards land while the slow ones are
+        still computing.
+
+        MERGE RULES ARE PER STAGE, unchanged from the individual endpoints:
+        site-characterisation lines flat-merge into one card set (People one
+        level deeper, by section); the four threat lines stay separate per
+        tab, because the tabs reuse field names like `total_area_ha`; the
+        `pathway` line's `data` is the complete PathwaySelection document,
+        exactly the standalone endpoint's `result`.
+
+        Every stage's caveats carry over: per-line `error_status` with
+        partial/failed semantics, threat's coverage guards, pathway's
+        placeholder disturbed fields. Results persist to the session's
+        analyser row identically to the individual endpoints, so the
+        document and benefit flows read the same stored data either way.
+      operationId: getAnalysis
+
   /geos/feature/site-characterisation:
     get:
       tags:
@@ -1311,6 +1370,212 @@ paths:
         - $ref: "#/components/parameters/session_id"
       description: calculate and retrieve benefit analysis results for the project area
       operationId: getBenefits
+
+  /geos/feature/benefit-v3:
+    post:
+      tags:
+        - Geo module
+      summary: calculate potential benefit (F02-P5)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: BenefitV3Ok
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - duration_years
+                      - carbon_project
+                      - carbon_risk
+                      - general_benefit
+                      - avoided_emissions
+                      - arr_sequestration
+                      - net_emission_reduction
+                      - net_carbon_removal
+                      - net_errs
+                      - habitat_loss_avoided
+                      - threatened_species_habitat
+                    properties:
+                      duration_years:
+                        type: integer
+                        examples:
+                          - 30
+                      carbon_project:
+                        type: boolean
+                      carbon_risk:
+                        type: object
+                        description: the deduction percentages this run applied
+                      avoided_emissions:
+                        type: object
+                        description: >-
+                          component 5.2. `applicable` false with the reason in
+                          `narrative` when the AOI has no QB-flagged Protect
+                          area, no rate, or no risk coverage. When applicable,
+                          `values.total_tco2e` is the gross avoided-emissions
+                          headline and `tables.annual_projection` the yearly
+                          curve.
+                      arr_sequestration:
+                        type: object
+                        description: >-
+                          component 5.3, the gross ARR removal 5.5 reads.
+                          `values.total_tco2e` central estimate with
+                          `total_low_tco2e`/`total_high_tco2e` the indicative
+                          range; per-ecosystem and dryland-zone splits in
+                          values; savanna and peatland areas are deferred, not
+                          quantified.
+                      net_emission_reduction:
+                        type:
+                          - object
+                          - "null"
+                        description: >-
+                          component 5.4 -- 5.2's gross total after the leakage
+                          / uncertainty / buffer deductions. Null when
+                          `carbon_project` is off or 5.2 is not applicable
+                          (the notebook's "section deactivated").
+                      net_carbon_removal:
+                        type:
+                          - object
+                          - "null"
+                        description: component 5.5, same shape and gating as
+                          5.4, applied to 5.3's gross removal.
+                      general_benefit:
+                        type: object
+                        description: >-
+                          component 5.1. Per pathway present, the activities
+                          and their benefits split into the three Triple Win
+                          pillars (`values.by_pathway`, plus flat
+                          `tables.activities` / `tables.benefits`).
+                      net_errs:
+                        type:
+                          - object
+                          - "null"
+                        description: >-
+                          component 5.6, the combined Net ERRs headline:
+                          leakage and uncertainty off the combined 5.2+5.3
+                          gross, then the buffer withheld from the ADJUSTED
+                          figure -- deliberately not the sum of 5.4 and 5.5.
+                          Same gating as 5.4/5.5.
+                      habitat_loss_avoided:
+                        type: object
+                        description: >-
+                          component 5.9. Suitable-habitat hectares whose
+                          projected loss the project avoids, on the
+                          deforestation-risk grid, plus the count of species
+                          whose habitat overlaps the projected loss.
+                      threatened_species_habitat:
+                        type: object
+                        description: >-
+                          component 5.10. Per threatened species (CR/EN/VU):
+                          habitat in the AOI and the share projected
+                          deforestation would take (`tables.species`), with
+                          the CR/EN/VU counts and the overall avoided-loss
+                          percentage in `values`.
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: >-
+        F02-P5 components 5.1 / 5.2 / 5.3 / 5.4 / 5.5 / 5.6 / 5.9 / 5.10
+        (5.7, 5.8, 5.11-5.13 are not ported -- data team's scope).
+
+        THE PATHWAY SCREEN'S "Calculate potential benefit" BUTTON CALLS THIS.
+        The JSON body carries the screen's state: `duration_years` (the
+        slider), `carbon_project` (the toggle), `leakage` / `uncertainty` /
+        `buffer` (the Carbon Risk Assumption inputs), and `selections` -- the
+        per-ecosystem pathway toggles and chosen activity ids. Selections are
+        echoed into the persisted result (they feed the document templates'
+        Chosen NbS Activities and the F05 monitoring flow); they do NOT gate
+        the quantification -- 5.2/5.3 quantify eligibility as the notebook
+        does. Avoided deforestation emissions on the Protect area
+        (ranked-risk allocation of a compounding baseline loss), ex-ante ARR
+        removal on the Restore area (ANX-B yield-curve method), and both
+        figures net of the carbon-risk deductions.
+
+        5.2 reads the deforestation rate from the session's persisted
+        site-characterisation result; run that first or 5.2 reports
+        not-applicable. Per the Verra NPRT disclaimer carried from the
+        notebook: the 15% leakage default is an optional conservative
+        default, not a universal minimum, and the official buffer-pool
+        contribution must be determined with the Verra AFOLU Non-Permanence
+        Risk Tool at validation. Results persist to the session's analyser
+        row and feed the feasibility document's carbon figures.
+      operationId: postBenefitV3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                duration_years:
+                  type: integer
+                  default: 30
+                  description: project crediting duration in whole years (the
+                    Duration of intervention slider)
+                carbon_project:
+                  type: boolean
+                  default: true
+                  description: the NbS-carbon-project toggle; false disables
+                    5.4, 5.5 and 5.6 (also accepts "yes"/"no" strings)
+                leakage:
+                  type: number
+                  default: 15.0
+                  minimum: 1
+                  maximum: 100
+                  description: leakage deduction, percent; outside 1-100 is
+                    a 400
+                uncertainty:
+                  type: number
+                  default: 10.0
+                  minimum: 1
+                  maximum: 100
+                  description: uncertainty deduction, percent; outside 1-100 is
+                    a 400
+                buffer:
+                  type: number
+                  default: 12.0
+                  minimum: 1
+                  maximum: 100
+                  description: buffer-pool deduction, percent; outside 1-100
+                    is a 400, and so is leakage + uncertainty + buffer over
+                    100.
+                ecosystem_class:
+                  type: integer
+                  default: 1
+                  enum: [1, 2, 3]
+                  description: the ecosystem 5.9 and 5.10 assess -- 1 forest,
+                    2 mangrove, 3 peatland
+                selections:
+                  type: object
+                  description: >-
+                    the screen's per-ecosystem pathway toggles and chosen
+                    activity ids, keyed forest / mangrove / peatland. Echoed
+                    into the persisted result; not used in the
+                    quantification.
+                  examples:
+                    - forest:
+                        protect: true
+                        manage: false
+                        restore: true
+                        activities: ["111", "321"]
+                      mangrove:
+                        protect: true
+                        manage: false
+                        restore: false
+                        activities: []
+        required: true
 
   /geos/feature/data-analyzer:
     get:
@@ -2099,6 +2364,137 @@ paths:
                       DD-Month-Year: 23-August-2026
         required: true
 
+  /documents/monitoring/v3:
+    get:
+      tags:
+        - Document module
+      summary: get monitoring form draft
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: GetMonitoringV3Ok
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - form
+                      - user_input
+                    properties:
+                      form:
+                        type: object
+                      user_input:
+                        type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: >-
+        F03. The monitoring plan form draft for a session. Monitoring LAYERS
+        ON TOP of feasibility: the merge order is analyser prefill, then the
+        FeasibilityV3 draft, then MonitoringV3's own answers, later sources
+        winning key by key -- so socio-economic answers entered once in the
+        feasibility form flow into the monitoring plan automatically.
+      operationId: getMonitoringV3
+    post:
+      tags:
+        - Document module
+      summary: save monitoring form / generate document
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: MonitoringV3Ok
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - message
+                    properties:
+                      message:
+                        type: string
+                        description: '`saved` on a pure save, `generated` when a document was produced'
+                        examples:
+                          - saved
+                          - generated
+                      document_id:
+                        type: string
+                        description: present only when `generate` was true
+                      document_name:
+                        type: string
+                        description: present only when `generate` was true
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: >-
+        F03. Same single-endpoint flow as `/documents/feasibility/v3`: every
+        POST saves the payload into the MonitoringV3 draft (atomic key-level
+        jsonb merge), and `generate: true` also renders the Monitoring Plan
+        DOCX. The render reads the layered draft (prefill < FeasibilityV3 <
+        MonitoringV3) plus the session's persisted v3 analysis; the per
+        ecosystem tables (areas per Protect / Manage / Restore and their
+        activities) fill from the pathway result, and unfilled tags stay as
+        literal bracket text for manual fill. Registered as a `MonitoringV3`
+        document, downloadable through `/documents/download/docx`.
+      operationId: postMonitoringV3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                generate:
+                  type: boolean
+                  default: false
+                form:
+                  type: object
+                  description: >-
+                    monitoring answers to merge into the draft. `mpActivities`
+                    carries the selected activity ids from F02-P4;
+                    `mpPlan` carries the F05 plan (the frontend's collectPlan
+                    shape) and is what fills the docx -- chosen activities per
+                    ecosystem and pathway, and the indicator tables' rows.
+                  examples:
+                    - mpActivities: [fo-pro-1]
+                      mpPlan:
+                        ecos:
+                          - id: forest
+                            name: Forest
+                            activities:
+                              - name: Establish protected areas, corridors, and enforce customary land rights.
+                                pw: PROTECT
+                                method: Field patrol
+                                groups:
+                                  - benefit: Enhanced biodiversity and ecosystem functions
+                                    cat: Nature
+                                    items:
+                                      - label: Species Richness-Flora
+                                        source: Quadrat surveys
+                                        freq: Semester (6 month)
+                user_input:
+                  type: object
+        required: true
+
   /documents/download/docx:
     get:
       tags:
@@ -2121,7 +2517,8 @@ paths:
       description: >-
         download a generated DOCX file by document id. The folder and download
         name follow the document's registered type: `FeasibilityV3` downloads
-        as "Feasibility Study.docx", `CCB` as "CCB Project Documentation.docx",
+        as "Feasibility Study.docx", `MonitoringV3` as "Monitoring Plan.docx",
+        `CCB` as "CCB Project Documentation.docx",
         anything else as the legacy "Preliminary Assessment Document.docx".
       operationId: downloadDocx
 

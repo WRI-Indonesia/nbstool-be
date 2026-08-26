@@ -20,19 +20,12 @@ from ....utils.common import app_exception_handler, success_handler
 
 from ...geo_apis.utils import GeoLogic
 
-from sqlalchemy.dialects.postgresql import JSONB
-
 from ....utils.document_generator import generate_document
 from ....utils.document_generator.v3 import generate_feasibility_v3
 from ....utils.document_generator.v3.prefill import feasibility_prefill, merge_form
 from ....models.geos_models.models import DataAnalyzer
-from ....models.master_models.models import DocumentData, DocumentList
-
-
-def _jsonb_merge(column, patch: dict):
-    """`coalesce(column, '{}') || patch` -- an atomic per-key merge evaluated by Postgres."""
-    return db.func.coalesce(column, db.cast('{}', JSONB)).op('||')(
-        db.cast(json.dumps(patch), JSONB))
+from ....models.master_models.models import DocumentList
+from ..utils import load_draft, save_draft
 
 from .. import gcs
 
@@ -98,13 +91,9 @@ def documents_feasibility_v3_get():
         if not session_id:
             raise AppMessageException('please provide session_id')
 
-        analyzer = DataAnalyzer.find_by_session_id(session_id)
-        stored = DocumentData.find_by_session_id_and_type(session_id, 'FeasibilityV3')
+        _, form, user_input = load_draft(session_id, 'FeasibilityV3')
 
-        results = {
-            'form': merge_form(stored.form if stored else None, feasibility_prefill(analyzer)),
-            'user_input': (stored.user_input if stored else None) or {},
-        }
+        results = {'form': form, 'user_input': user_input}
         return make_response(jsonify(success_handler({'result': results})), 200)
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
@@ -136,27 +125,9 @@ def documents_feasibility_v3():
         g_var.__session_id__ = session_id
 
         # Save first, always: the draft is never stale after a POST, whether or not it generates.
-        patch_form = data.get('form') or {}
-        patch_user_input = data.get('user_input') or {}
-
-        stored = DocumentData.find_by_session_id_and_type(session_id, 'FeasibilityV3')
-        if not stored:
-            stored = DocumentData(session_id=session_id, certification_type='FeasibilityV3',
-                                  form=patch_form, user_input=patch_user_input)
-            db.session.add(stored)
-        else:
-            # The merge happens IN POSTGRES (`form || patch`), not in python: only the patch's
-            # keys are appended or replaced, so two concurrent saves -- an autosave landing while
-            # the user clicks next -- cannot lose each other's fields the way a read-modify-write
-            # of the whole dict would.
-            if patch_form:
-                stored.form = _jsonb_merge(DocumentData.form, patch_form)
-            if patch_user_input:
-                stored.user_input = _jsonb_merge(DocumentData.user_input, patch_user_input)
-        db.session.flush()
-        # The SQL-side merge leaves the attributes holding expressions; re-read the row so the
-        # generate path below renders from the actual merged values.
-        db.session.refresh(stored)
+        # The merge happens atomically in Postgres -- see utils.save_draft.
+        stored = save_draft(session_id, 'FeasibilityV3',
+                            data.get('form') or {}, data.get('user_input') or {})
 
         if not data.get('generate'):
             db.session.commit()

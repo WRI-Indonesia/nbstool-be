@@ -28,13 +28,16 @@ from ....utils.geos import GeoUtils
 # from ....utils.geos.current_condition import process_input_data_analyzer_result
 # from ....utils.geos.benefit import run_benefit
 from ....utils.geos.v3.common import prepare_aoi_from_session, to_jsonable
+from ....utils.geos.v3.benefit.run_benefit import run_benefit
 from ....utils.geos.v3.pathway.run_pathway import run_pathway
+from ....utils.geos.v3.run_analysis import COMPONENTS as ANALYSIS_COMPONENTS
+from ....utils.geos.v3.run_analysis import stream_analysis
 from ....utils.geos.v3.site_characterisation.run_site_characterisation import (
     COMPONENTS,
     stream_site_characterisation,
 )
 from ....utils.geos.v3.threat.run_threat import SECTIONS, stream_threat
-from .persist import SITECHAR_COLUMNS, persist_ndjson, save_v3_sections
+from .persist import ANALYSIS_COLUMNS, SITECHAR_COLUMNS, persist_ndjson, save_v3_sections
 
 from ..utils import GeoLogic
 
@@ -336,6 +339,56 @@ def geo_feature_site_characterisation():
     )
 
 
+# v3: THE UNION STREAM. Site characterisation + threat + pathway as one NDJSON response -- the
+# only analysis call the frontend makes after the polygon. Same envelope, same retry contract;
+# component names are unique across the three stages, so `?process=` addresses any card. The
+# individual endpoints below remain for tooling and single-stage runs.
+#
+# Takes a _SITECHAR_SLOTS slot: this run holds site characterisation's ~25 raster windows PLUS
+# threat's twelve rasters and pathway's band reads.
+@geo_apis_blueprint.route('/feature/analysis', methods=['GET'])
+@cross_origin()
+def geo_feature_analysis():
+    g_var.__api_name__ = 'geo_feature_analysis'
+
+    try:
+        session_id = request.args.get('session_id')
+
+        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+
+        if not known_polygons:
+            raise AppMessageException('fail, session id Not found')
+
+        known_polygons.assert_area_size()
+
+        # None means the whole union. A typo has to 400 before the stream opens.
+        wanted = request.args.getlist('process') or None
+        if wanted:
+            unknown = [name for name in wanted if name not in ANALYSIS_COMPONENTS]
+            if unknown:
+                raise AppMessageException(
+                    f"fail, unknown process: {', '.join(unknown)}")
+
+        aoi = prepare_aoi_from_session(session_id)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+    path = request.script_root + request.path
+
+    def retry_url(process):
+        return f"{path}?{urlencode({'session_id': session_id, 'process': process})}"
+
+    lines = _limit_slots(persist_ndjson(
+        stream_analysis(aoi, wanted, retry_url), session_id, ANALYSIS_COLUMNS.get))
+
+    return Response(
+        stream_with_context(lines),
+        mimetype='application/x-ndjson',
+    )
+
+
 # v3: F02-P3 Threat. The Threat Profile screen: four tabs, one NDJSON line each.
 #
 # STREAMED, and with the SAME ENVELOPE as site-characterisation rather than pathway's single JSON
@@ -390,7 +443,7 @@ def geo_feature_threat():
     # they cannot share one flat namespace in threat_json.
     lines = _limit_slots(persist_ndjson(
         stream_threat(aoi, wanted, retry_url), session_id,
-        lambda name: 'threat_json', nest_by_process=True))
+        lambda name: ('threat_json', True)))
 
     return Response(
         stream_with_context(lines),
@@ -432,6 +485,85 @@ def geo_feature_pathway():
         result = to_jsonable(run_pathway(aoi))
 
         save_v3_sections(session_id, {'intervention_eligibility_json': result})
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+    return make_response(jsonify(success_handler({'result': result})), 200)
+
+
+# v3: F02-P5 Benefit, carbon components 5.2 / 5.3 / 5.4 / 5.5. A PLAIN JSON RESPONSE like
+# pathway: two raster analyses plus two subtractions, nothing to stream.
+#
+# 5.2 needs the deforestation rate from a completed site-characterisation run, read from the
+# persisted DataAnalyzer row -- absent, 5.2 reports not-applicable rather than failing, exactly
+# as the notebook does with a missing stage file. The carbon-risk deductions default to
+# CARBON_RISK_DEFAULTS and may be overridden per request; their sum over 100% is a 400 (the
+# notebook's own 4.4 validation).
+# The "Calculate potential benefit" button on the Pathway screen POSTs the screen's state: the
+# per-ecosystem pathway toggles and chosen activities (`selections`), the duration slider, the
+# carbon-project toggle and its three deduction inputs. `selections` is echoed into the
+# persisted result -- it does not gate the quantification (5.2/5.3 follow the notebook and
+# quantify ELIGIBILITY; whether a de-toggled pathway should drop out of the numbers is an open
+# product decision).
+@geo_apis_blueprint.route('/feature/benefit-v3', methods=['POST'])
+@cross_origin()
+def geo_feature_benefit_v3():
+    g_var.__api_name__ = 'geo_feature_benefit_v3'
+
+    try:
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+        payload = request.get_json()
+
+        def param(name, default=None):
+            return payload.get(name, default)
+
+        session_id = param('session_id')
+
+        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+
+        if not known_polygons:
+            raise AppMessageException('fail, session id Not found')
+
+        known_polygons.assert_area_size()
+
+        try:
+            duration_years = int(param('duration_years', 30))
+            ecosystem_class = int(param('ecosystem_class', 1))
+            leakage = param('leakage')
+            uncertainty = param('uncertainty')
+            buffer = param('buffer')
+            leakage = float(leakage) if leakage is not None else None
+            uncertainty = float(uncertainty) if uncertainty is not None else None
+            buffer = float(buffer) if buffer is not None else None
+        except (TypeError, ValueError):
+            raise AppMessageException('fail, duration_years/ecosystem_class/leakage/uncertainty/buffer must be numbers')
+        if ecosystem_class not in (1, 2, 3):
+            raise AppMessageException('fail, ecosystem_class must be 1 (forest), 2 (mangrove) or 3 (peatland)')
+        carbon_project = str(param('carbon_project', 'yes')).lower() in ('yes', 'y', 'true', '1')
+        selections = payload.get('selections')
+        if selections is not None and not isinstance(selections, dict):
+            raise AppMessageException('fail, selections must be an object keyed by ecosystem')
+
+        analyzer = DataAnalyzer.find_by_session_id(session_id)
+        site = (analyzer.site_information_json if analyzer else None) or {}
+        rate_pct = site.get('historical_deforestation_percentage')
+
+        aoi = prepare_aoi_from_session(session_id)
+        try:
+            result = run_benefit(aoi, duration_years, rate_pct, carbon_project,
+                                 leakage, uncertainty, buffer, ecosystem_class)
+        except ValueError as e:
+            raise AppMessageException(f'fail, {e}')
+
+        # The screen's pathway/activity choices ride along with the run they produced, so the
+        # document templates and F05 can read the CHOSEN activities from the analyser row.
+        if selections is not None:
+            result['selections'] = selections
+
+        save_v3_sections(session_id, {'benefit_json': result})
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

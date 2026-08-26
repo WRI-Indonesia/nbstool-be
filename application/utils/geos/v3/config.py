@@ -327,25 +327,6 @@ ADMIN_LEVELS = {
     "village":     (["COUNTRY", "NAME_1", "NAME_2", "NAME_3", "NAME_4"], "NAME_4", "NAME_3"),
 }
 
-# Indigenous territory. Which polygon layer the indigenous territory component reads. The GIS
-# database holds three candidates; this one is the ONLY polygon layer covering Indonesia:
-#   sea.indigenous_ethnicity        MultiPolygon, 9,267 rows, all 11 countries  <- used
-#   sea.indigenous_ethnic_indicative MultiPolygon, 415 rows, no Indonesia or Philippines
-#   sea.indigenous_indicative        POINTS (AMAN member communities), unusable for overlap
-# It is an ethnolinguistic homelands map, so the "territory" name is the people's name (Dayak,
-# Pakpak, ...), indicative rather than a legally recognised boundary. Swap the table here if the
-# team later prefers the labeled-territory layer plus a country carve-out.
-INDIGENOUS_TABLE = "sea.indigenous_ethnicity"
-# A sliver threshold like 1.2's, because ethnolinguistic boundaries are coarse: an overlap under
-# 1% of the AOI is boundary noise, not a resident group.
-INDIGENOUS_SLIVER_PCT = 1.0
-# The layer also maps NATIONWIDE DIASPORA polygons -- Han Chinese in Indonesia is one 57M ha
-# polygon covering the whole archipelago, and it would otherwise "win" every AOI at 100%.
-# A group whose total mapped extent exceeds this is a population distribution, not a homeland,
-# and is dropped. Calibrated on West Kalimantan: genuine homelands measured 0.1-3M ha against
-# the 57M ha blanket; 20M ha splits them with an order of magnitude to spare on either side.
-INDIGENOUS_MAX_SOURCE_HA = 20_000_000
-
 # Protected areas, WDPA (1.3). No v3 bucket object, and the backend already holds the layer, so
 # this one reads the GIS database. db.load_wdpa_intersecting renames the columns back to the
 # shapefile's (NAME, DESIG_ENG, IUCN_CAT, STATUS, REALM), so 1.3 itself is unchanged.
@@ -1139,4 +1120,195 @@ SOCIAL_LEVEL_SOURCES = {
         1: [("phl.regions_18", "adm1_name"), ("phl.regions_17", "adm1_name")],
         2: "dominant_province",
     },
+}
+
+# ---------------------------------------------------------------------------------------
+# Benefit quantification (F02-P5) -- constants copied verbatim from the notebook config
+# ---------------------------------------------------------------------------------------
+PROTECT_CODE = 1   # named because F02-P5 selects on it; the other codes are only tabulated
+RESTORE_CODE = 3   # named because 5.3 selects Restore pixels on it
+
+# Apply carbon risk assumption
+# User inputs the leakage, uncertainty, and buffer values in the GUI. The tool applies them to the
+# carbon quantification results. The default values are set here, and can be overridden by the
+DEFAULT_LEAKAGE = 15.0
+DEFAULT_UNCERTAINTY = 10.0
+DEFAULT_BUFFER = 12.0
+
+# ---------------------------------------------------------------------------------------
+# Benefit quantification (F02-P5)
+# ---------------------------------------------------------------------------------------
+
+# 5.1 General Benefit. The three ASEAN Triple Win pillars, in the order the tool reports them.
+# The keys match the three benefit columns of canonical_v3_activities, mapped to the pillar name
+# used across the GUI Phase 5 (Triple Win adoption, May 2026). 5.1 collects the benefit phrases
+# each activity declares, groups them under these pillars, and merges the duplicates.
+TRIPLE_WIN_PILLARS = {
+    "benefit_nature":  "Forestry, Ecosystem Health and Biodiversity",
+    "benefit_people":  "People and Communities",
+    "benefit_climate": "Climate Resilience and Mitigation",
+}
+
+# 5.1 reports every benefit that occurs, however small the area behind it, and ranks them by
+# supporting area instead of dropping any. This is the denominator warning threshold only: a
+# flag, not a filter, when a benefit is carried by less than this share of the AOI.
+BENEFIT_SLIVER_WARN_PCT = 1.0
+
+# 5.2 Avoided Emissions from Unplanned Deforestation reads no new layer. It combines three
+# layers that other components already declare: PATHWAY_RASTER (which pixels are Protect),
+# PROB_RASTER (how the projected loss is placed), and AGB_RASTER + the derived BGB (how much carbon
+# each of those pixels holds).
+
+# The historical rate in 1.5 is measured over 2014 to 2024. Projecting it further than the
+# window it was measured in is the largest assumption in the whole calculation, so 5.2 flags a
+# project duration above this. VM0048 requires a baseline to be reassessed every six years for
+# the same reason. The tool still returns a full figure; it does not truncate.
+BASELINE_RATE_MAX_YEARS = 10
+
+# 5.2 flag when the risk layer covers less than this share of the Protect area. Protect pixels
+# without a risk value cannot receive projected loss, so they drop out of the estimate.
+PROTECT_RISK_COVERAGE_WARN_PCT = 90.0
+
+# Reference ecosystem code (pathway band 3) whose carbon is dominated by a pool 5.2 cannot see.
+PATHWAY_ECOSYSTEM_PEATLAND = 3
+
+# The word 5.2 puts in its narrative for each reference ecosystem. Only three of the five band 3
+# classes appear, and that is not an omission: prob.tif is forest masked upstream, so Protect
+# pixels on grassland or savanna (code 4) and on water or other (code 0) carry no risk value and
+# never enter the Protect pool. A pool pixel outside this mapping means the risk layer and the
+# ecosystem band disagree about what is forest, which 5.2 raises as a flag.
+PROTECT_ECOSYSTEM_WORDS = {1: "forest", 2: "mangrove", 3: "peatland"}
+
+# ---------------------------------------------------------------------------------------
+# ARR carbon sequestration (Benefit module 5.3), per NBS-v3-ANX-B v2 (2026-07-28)
+# ---------------------------------------------------------------------------------------
+# Reference-rate / yield-curve method: accumulate living biomass (AGB + BGB) on a restoring
+# stand over the project years, deduct the biomass already on site, scale by a stocking factor,
+# convert to tCO2e. Rates and parameters are from ANX-B Section 4; that doc carries the sources
+# and confidence levels. Biomass ONLY: no soil, no peat soil, no avoided emissions, no dead wood
+# or litter. This is an ex-ante, pre-feasibility estimate, not project-grade MRV.
+
+# Which (cat_code, ecosystem) pairs get carbon quantified. Encodes ANX-B Section 3.2
+# "Sequestration calculated", keyed on the pathway raster's band-3 cat_code and band-2 ecosystem.
+# Deliberately NOT the sheet's QB Carbon Sequestration flag: the sheet currently contradicts the
+# method on peat (sheet No, method Yes biomass-only) and savanna (sheet Yes, method defers), and
+# is flagged for reconciliation. Savanna (eco 4) is absent here = deferred; Cat 9B peat (14, 3)
+# is absent = rewetting only, no planting.
+ARR_SEQ_PAIRS = frozenset({
+    (4, 1), (4, 2), (4, 3),     # Cat 3B  dryland, mangrove, peat
+    (6, 1), (6, 2), (6, 3),     # Cat 4B
+    (7, 1), (7, 2), (7, 3),     # Cat 5   (savanna 7,4 excluded)
+    (12, 1), (12, 2), (12, 3),  # Cat 8C
+    (14, 2),                    # Cat 9B  mangrove only (peat 14,3 is rewetting only)
+    (17, 1), (17, 2), (17, 3),  # Cat 10  (savanna 17,4 excluded)
+})
+
+# Growth phases, ANX-B Section 4.4. Young Y1-20, Old Y21-40. The curve is defined only to Y40;
+# beyond that no further accumulation is credited.
+ARR_YOUNG_END_YEAR = 20
+ARR_OLD_END_YEAR = 40
+
+# Reference accumulation rates, Mg DRY MATTER per ha per year, ANX-B Section 4.6. Mangrove and
+# peatland use one rate each; dryland is split into three zones, derived per pixel (below).
+ARR_RATE_DM = {                        # non-dryland ecosystems, keyed on ecosystem code
+    2: {"young": 12.0, "old": 7.0},    # mangrove
+    3: {"young": 5.7, "old": 3.5},     # peatland, biomass only
+}
+ARR_RATE_DM_DRYLAND = {                # dryland, keyed on zone code (see ARR_DRYLAND_ZONES)
+    1: {"young": 3.4, "old": 2.7},     # humid lowland (rainforest)
+    2: {"young": 2.4, "old": 2.0},     # seasonal lowland (conservative, wide range)
+    3: {"young": 2.4, "old": 1.9},     # humid montane
+}
+
+# Root-to-shoot ratio R (BGB / AGB), ANX-B Section 4.7, low-biomass classes.
+ARR_ROOT_TO_SHOOT = {2: 0.39, 3: 0.25}                    # mangrove, peat
+ARR_ROOT_TO_SHOOT_DRYLAND = {1: 0.21, 2: 0.44, 3: 0.32}   # humid lowland, seasonal, montane
+
+# Dryland zone derivation, ANX-B Section 4.5. Derived per pixel from elevation (metres,
+# ELEVATION_RASTER) and the 12-band monthly precipitation raster (WORLDCLIM_PREC_RASTER). A month
+# below ARR_ZONE_DRY_MONTH_MM counts as a dry month (Walsh 1996, tropical dry-season standard).
+# Rule: humid montane if elevation above 1000 m; else humid lowland if annual rainfall above
+# 2000 mm AND fewer than 3 dry months; else seasonal lowland. Boundary and missing-data pixels
+# fall to seasonal lowland, the lower-productivity zone, for a conservative estimate.
+ARR_DRYLAND_ZONES = {1: "humid lowland", 2: "seasonal lowland", 3: "humid montane"}
+ARR_ZONE_ELEV_MONTANE_M = 1000.0
+ARR_ZONE_WET_ANNUAL_MM = 2000.0
+ARR_ZONE_DRY_MONTH_MM = 100.0
+ARR_ZONE_DRY_SEASON_MONTHS = 3
+ARR_DRYLAND_DEFAULT_ZONE = 2   # seasonal lowland, used when zone inputs are missing
+
+# Baseline mode for the primary 5.3 result (team decision, 2026-07-29):
+#   "class"         - small assumed standing biomass per current LC state (ARR_BASELINE_CLASS_MGHA).
+#                     This is the OFFICIAL mode. It matches the "small but non-zero" baseline the
+#                     doc's Section 4.8 assumes for degraded classes, and avoids the GEDI problem.
+#   "per_pixel_agb" - the per-pixel AGB raster baseline. Kept as a diagnostic only: on vegetated
+#                     Restore land GEDI reads a high baseline (Section 4.9) and zeroes the result.
+#   "none"          - no baseline deduction (gross). Upper-bound scenario.
+# Whatever the mode, 5.3 reports all three totals in `values` for comparison.
+ARR_BASELINE_MODE = "class"
+
+# Small class-based baseline, AGB Mg/ha per current LC state. VALUES ARE PLACEHOLDERS pending
+# literature references (team is sourcing them); the number scales with these, so treat the
+# result as indicative until they are set. They are not from the doc.
+ARR_BASELINE_CLASS_MGHA = {"C4": 25.0, "C5": 5.0, "C6": 0.0}   # AGB Mg/ha per current LC state
+ARR_RESTORE_CAT_CSTATE = {                                     # Restore cat_code -> current state
+    4: "C4",   # Cat 3B  Forest -> shrub / vegetation
+    6: "C5",   # Cat 4B  Forest -> active use
+    7: "C6",   # Cat 5   Forest -> barren
+    12: "C4",  # Cat 8C  Non-forest -> vegetation
+    14: "C5",  # Cat 9B  Non-forest -> active use
+    17: "C6",  # Cat 10  Non-forest -> barren
+}
+
+# Carbon fraction, dry matter to carbon, ANX-B Section 4.6. Mangrove 0.451, others 0.47.
+ARR_CARBON_FRACTION = {1: 0.47, 2: 0.451, 3: 0.47}
+
+# Stocking factor, ANX-B Section 4.9. Active planting reaches full stocking; ANR and mangrove EMR
+# rely on natural recruitment. The 0.8 for ANR/EMR is UNCALIBRATED (doc range 0.7 to 0.85, open
+# item). ARR_ANR_PAIRS lists the (cat_code, ecosystem) whose activity is ANR or mangrove EMR:
+# 3B dryland is literally ANR, and the ARR method treats Cat 4B/5/8C/10 mangrove as EMR. All
+# other pairs are treated as planting. The split itself is uncalibrated and flagged.
+ARR_STOCKING_PLANTING = 1.0
+ARR_STOCKING_ANR = 0.8
+ARR_ANR_PAIRS = frozenset({(4, 1), (6, 2), (7, 2), (12, 2), (17, 2)})
+
+# Uncertainty band, ANX-B Section 4.11. Indicative screening range, NOT a confidence interval.
+ARR_UNCERTAINTY_LOW = 0.7
+ARR_UNCERTAINTY_HIGH = 1.2
+
+# Ecosystem codes whose ARR carbon is NOT quantified: the activity and benefits still apply, but
+# no carbon number is produced. 5.3 skips any (cat_code, ecosystem) in ARR_SEQ_PAIRS whose
+# ecosystem is listed here, and reports the area as deferred instead.
+#   4 savanna    : methodological deferral. Savanna stores carbon mainly in soil and roots,
+#                  outside the biomass scope, and has no biomass rates.
+#   3 peatland   : TEMPORARY exclusion (team decision, 2026-07-29). The biomass method and the
+#                  peat rates exist and work; peat is held out for now. Remove 3 from this set to
+#                  re-enable peat biomass quantification (it is flagged biomass-only, since peat
+#                  soil and avoided emissions are out of scope).
+ARR_CARBON_DEFERRED_ECO = frozenset({3, 4})
+
+# ---------------------------------------------------------------------------------------
+# Enhanced Biodiversity (5.9) and Threatened Species Habitat (5.10) -- notebook constants
+# ---------------------------------------------------------------------------------------
+# The notebook's DEF_RISK / ECOSYSTEM / HABITAT_ROOT / INVENTORY paths map to PROB_RASTER,
+# THREAT_ECOSYSTEM, AOH_RASTER_ROOT and AOH_INVENTORY (same objects in the bucket).
+ECOSYSTEM_CLASS = 1         # 1 Forest, 2 Mangrove, 3 Peatland -- the notebook's default run
+ECOSYSTEM_NAMES = {
+    1: "forest",
+    2: "mangrove",
+    3: "peatland"
+}
+
+# Change only these if your GeoParquet uses different column names
+SPECIES_COL = "species"
+STATUS_COL = "redlistCategory"
+RASTER_COL = "raster_path"
+
+IUCN_MAP = {
+    "CRITICALLY ENDANGERED": "CR",
+    "ENDANGERED": "EN",
+    "VULNERABLE": "VU",
+    "CR": "CR",
+    "EN": "EN",
+    "VU": "VU",
 }

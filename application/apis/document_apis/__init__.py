@@ -8,6 +8,7 @@ gcs = CloudStorage()
 from . import routes
 
 from .feasibility import routes
+from .monitoring import routes
 from .ccb import routes
 from .download import routes
 from .cleanup import routes

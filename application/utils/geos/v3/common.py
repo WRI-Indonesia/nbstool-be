@@ -749,3 +749,8 @@ def to_jsonable(obj: object) -> object:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     return obj
+
+def component_values(payload: dict, component_key: str) -> dict:
+    """Shortcut for the common read: `component_values(general, "1.2")["dominant_country"]`."""
+    return payload["components"][component_key]["values"]
+
