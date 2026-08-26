@@ -1,29 +1,31 @@
 """
-run_benefit.py - F02-P5 carbon components (5.2, 5.3, 5.4, 5.5) as ONE JSON response.
+run_benefit.py - the F02-P5 Benefit components (5.1-5.6, 5.9-5.13) behind one runner.
 
-Ported scope (team request 2026-08-25): 5.2 avoided emissions, 5.4 net emission reduction, 5.5
-net sequestration -- plus 5.3, which 5.5 reads its gross removal from and cannot run without.
-5.1 General Benefit and the nature-benefit modules (5.7+) are NOT ported; the notebook is still
-reworking them.
+Each component returns the house `(results, view_results)` pair -- plain dicts, like site
+characterisation, threat and pathway. `view_results` is the flat card contract: `applicable`,
+`narrative`, and exactly the fields the interactive-map Step 5 cards interpolate -- headline
+metric, formula breakdown, species/hazard row lists. Diagnostics and provenance stay in
+`results`; permanent methodology caveats travel as `notes` (never `flags` -- they must not
+drive `error_status`).
 
-A SINGLE JSON DOCUMENT like pathway, not a stream: two raster analyses and two subtractions.
-The seams, replacing the notebook's saved stage files:
+The seams replacing the notebook's saved stage files:
 
     rate_pct        the caller reads component 1.5's rate from the persisted DataAnalyzer row
                     (`site_information_json.historical_deforestation_percentage`, the same
                     value the notebook reads as `component_values(general, "1.5")["rate_pct"]`)
-    pathway_stage   a fresh 4.2 run wrapped in the notebook's stage shape, for 5.2's QB gate
+    activity_stage  a fresh 4.2 run wrapped in the notebook's stage shape, for 5.1/5.2's QB
+                    gate -- run once, never emitted
 
-5.4 and 5.5 exist only for an NbS carbon project (the notebook's 4.4 toggle) and only when their
-gross component is applicable; otherwise they are None in the response, which is the notebook's
-"section remains deactivated". The deduction percentages come from the user (GUI), defaulting to
-CARBON_RISK_DEFAULTS, and their sum may not exceed 100 -- the notebook's own validation.
+5.4/5.5/5.6 exist only for an NbS carbon project (the notebook's 4.4 toggle) and only when a
+gross component is applicable; otherwise they emit as not-applicable cards -- the notebook's
+"section remains deactivated". The deduction percentages come from the user (GUI), defaulting
+to CARBON_RISK_DEFAULTS, and their sum may not exceed 100 -- the notebook's own validation.
 """
 
 from __future__ import annotations
 
 try:
-    from ..common import AOI, ComponentResult, to_jsonable
+    from ..common import AOI, to_jsonable
     from ..config import (
         CARBON_RISK_DEFAULTS,
         ECOSYSTEM_CLASS,
@@ -33,8 +35,11 @@ try:
     from ..pipeline import after, error_status, safe, stream
     from .avoided_deforestation import analyze_avoided_deforestation_emissions
     from .arr_sequestration import analyze_arr_sequestration
+    from .biodiversity_uplift import analyze_biodiversity_uplift
+    from .climate_resilience import analyze_climate_resilience
     from .general_benefit import analyze_general_benefit
     from .habitat_loss_avoided import analyze_habitat_loss_avoided
+    from .microclimate import analyze_microclimate
     from .net_carbon import net_carbon_removal, net_emission_reduction
     from .net_errs import net_errs
     from .threatened_species import analyze_threatened_species_habitat
@@ -48,7 +53,10 @@ except ImportError:  # `python run_benefit.py`: no package around it
     from activity_list import analyze_activity_list
     from arr_sequestration import analyze_arr_sequestration
     from avoided_deforestation import analyze_avoided_deforestation_emissions
-    from common import AOI, ComponentResult, to_jsonable
+    from biodiversity_uplift import analyze_biodiversity_uplift
+    from climate_resilience import analyze_climate_resilience
+    from common import AOI, to_jsonable
+    from microclimate import analyze_microclimate
     from config import (
         CARBON_RISK_DEFAULTS,
         ECOSYSTEM_CLASS,
@@ -67,67 +75,25 @@ def run_benefit(aoi: AOI, duration_years: int = INTERVENTION_DURATION_DEFAULT_YE
                 leakage: float | None = None, uncertainty: float | None = None,
                 buffer: float | None = None,
                 ecosystem_class: int = ECOSYSTEM_CLASS) -> dict:
-    """The F02-P5 carbon components for one AOI, as a jsonable dict."""
+    """Every emitted component's card view as ONE dict, `{process: data}` -- exactly the
+    stream's lines minus the envelope, so the persisted `benefit_json` and this response are
+    the same shape. Runs the components sequentially; scripts and offline checks only, the
+    endpoint serves `stream_benefit`."""
     if leakage is None:
         leakage = CARBON_RISK_DEFAULTS["leakage_percentage"]
     if uncertainty is None:
         uncertainty = CARBON_RISK_DEFAULTS["uncertainty_percentage"]
     if buffer is None:
         buffer = CARBON_RISK_DEFAULTS["buffer_percentage"]
-    # The GUI's per-field range ("1-100%, default X%"), enforced server-side too so a client
-    # bypassing the spinners cannot slip a zero or negative deduction through the sum check.
-    for name, value in (("leakage", leakage), ("uncertainty", uncertainty), ("buffer", buffer)):
-        if not 1 <= value <= 100:
-            raise ValueError(f"{name} must be between 1 and 100 percent.")
-    # The notebook's 4.4 validation, verbatim rule.
-    if leakage + uncertainty + buffer > 100:
-        raise ValueError("Total deductions cannot exceed 100%.")
+    validate(duration_years, leakage, uncertainty, buffer)
 
-    # 5.2's QB gate reads the notebook's saved pathway stage; a fresh 4.2 run wrapped in the same
-    # shape is the backend equivalent (one raster pass, no persisted internals needed).
-    pathway_stage = {"components": {"4.2": to_jsonable(analyze_activity_list(aoi))}}
-
-    result_5_1 = analyze_general_benefit(pathway_stage)
-    result_5_2 = analyze_avoided_deforestation_emissions(
-        aoi, duration_years, rate_pct, pathway_stage)
-    result_5_3 = analyze_arr_sequestration(aoi, duration_years)
-
-    result_5_4 = None
-    result_5_5 = None
-    result_5_6 = None
-    if carbon_project and result_5_2.applicable:
-        result_5_4 = net_emission_reduction(
-            result_5_2.values["total_tco2e"], leakage, uncertainty, buffer)
-    if carbon_project and result_5_3.applicable:
-        result_5_5 = net_carbon_removal(
-            result_5_3.values["total_tco2e"], leakage, uncertainty, buffer)
-    # 5.6 combines both gross figures (port assumption, see net_errs.py).
-    if carbon_project and (result_5_2.applicable or result_5_3.applicable):
-        gross_err = ((result_5_2.values["total_tco2e"] if result_5_2.applicable else 0.0)
-                     + (result_5_3.values["total_tco2e"] if result_5_3.applicable else 0.0))
-        result_5_6 = net_errs(gross_err, leakage, uncertainty, buffer, duration_years)
-
-    result_5_9 = analyze_habitat_loss_avoided(aoi, duration_years, rate_pct, ecosystem_class)
-    result_5_10 = analyze_threatened_species_habitat(aoi, duration_years, rate_pct,
-                                                     ecosystem_class)
-
-    return to_jsonable({
-        "duration_years": duration_years,
-        "carbon_project": carbon_project,
-        "carbon_risk": {
-            "leakage_percentage": leakage,
-            "uncertainty_percentage": uncertainty,
-            "buffer_percentage": buffer,
-        },
-        "general_benefit": result_5_1,            # 5.1
-        "avoided_emissions": result_5_2,          # 5.2
-        "arr_sequestration": result_5_3,          # 5.3, carried because 5.5 reads it
-        "net_emission_reduction": result_5_4,     # 5.4, None unless carbon project + applicable
-        "net_carbon_removal": result_5_5,         # 5.5, None unless carbon project + applicable
-        "net_errs": result_5_6,                   # 5.6, same gating
-        "habitat_loss_avoided": result_5_9,       # 5.9
-        "threatened_species_habitat": result_5_10, # 5.10
-    })
+    components = _components(duration_years, rate_pct, carbon_project,
+                             leakage, uncertainty, buffer, ecosystem_class, None)
+    done: dict[str, tuple[dict, dict]] = {}
+    for name in _order(components):
+        fn, deps = components[name]
+        done[name] = fn(aoi, *(done[d] for d in deps))
+    return to_jsonable({name: view for name, (_, view) in done.items() if name not in _HIDDEN})
 
 
 # ---------------------------------------------------------------------------------------------
@@ -138,9 +104,10 @@ def run_benefit(aoi: AOI, duration_years: int = INTERVENTION_DURATION_DEFAULT_YE
 # the SAME UNDERSCORE KEYS the JSON response used (`avoided_emissions`, `net_errs`, ...), so the
 # persisted benefit_json keeps its exact shape -- persist nests each line under its process name.
 #
-# Each line's `data` is the whole ComponentResult (applicable / narrative / tables / values /
-# flags), which is what the cards render. `assumptions` is the first line: the run's inputs and
-# the screen's `selections`, persisted with everything else. When `carbon_project` is off,
+# Each line's `data` is the component's own `view_results` -- the flat card contract
+# (applicable / narrative / the card's fields and row lists). `assumptions` is the first line:
+# the run's inputs and the screen's `selections`, persisted with everything else. When
+# `carbon_project` is off,
 # 5.4/5.5/5.6 still EMIT (as not-applicable "deactivated" cards) so a re-run with the toggle off
 # overwrites a previous carbon run in the persisted row instead of leaving stale nets behind.
 #
@@ -162,21 +129,33 @@ _W = {
     'net_errs': 0.1,
     'habitat_loss_avoided': 27.0,
     'threatened_species_habitat': 25.0,
+    'biodiversity_uplift': 30.0,
+    'climate_resilience': 9.0,
+    'microclimate': 6.5,
 }
 
 _DEACTIVATED = ("This section is deactivated: the project was not marked as an NbS carbon "
                 "project.")
 
+# The People tab's six user-answered benefit cards ("Tap to specify this benefit"), in the FE's
+# display order. Their prompts, options and statement templates live in the frontend; the
+# backend only stores what the user specified.
+PEOPLE_BENEFIT_KEYS = ('food_water', 'livelihood', 'social', 'equity', 'tenure', 'cultural')
 
-def _wrap(result: ComponentResult) -> tuple[dict, dict]:
-    """A ComponentResult as a `(results, view)` pair: the view IS the whole result (the card
-    renders narrative and values alike), and flags/missing drive `error_status` as everywhere."""
-    return {'flags': result.flags, 'missing': result.missing}, to_jsonable(result)
+
+def _na_pair(reason: str) -> tuple[dict, dict]:
+    """A not-applicable card built in this seam (deactivated toggle, missing dependency).
+    `missing` -> error_status `failed`: this IS the answer, no retry can change it. The
+    components' own caveats travel as `notes` in results and the view, never `flags` --
+    routed into `error_status` they once marked every carbon line `failed` while it carried
+    real numbers."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
 
 
 def _components(duration_years: int, rate_pct, carbon_project: bool,
                 leakage: float, uncertainty: float, buffer: float,
-                ecosystem_class: int, selections) -> dict:
+                ecosystem_class: int, selections, people_benefits=None) -> dict:
     """name -> (fn, dependencies) for one request, parameters closed over."""
 
     def _assumptions(aoi: AOI) -> tuple[dict, dict]:
@@ -191,6 +170,14 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         }
         if selections is not None:
             view['selections'] = selections
+        # The People-tab cards are answered by the user, not computed. Every slot is emitted
+        # (null = not yet specified) so the client knows what can be filled; a filled card is
+        # {"statement": ..., "answer": ...} (answer is a list for the livelihood multi-select).
+        # Saving an answer is a re-POST with process: ["assumptions"] and the filled dict --
+        # only this line re-runs and the persisted merge keeps everything else.
+        view['people_benefits'] = {
+            key: (people_benefits or {}).get(key) for key in PEOPLE_BENEFIT_KEYS
+        }
         return {'flags': [], 'missing': []}, view
 
     def _activity_stage(aoi: AOI) -> tuple[dict, dict]:
@@ -202,69 +189,64 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         return results.get('stage', {'components': {}})
 
     def _general(aoi: AOI, stage) -> tuple[dict, dict]:
-        return _wrap(analyze_general_benefit(_stage_of(stage)))
+        return analyze_general_benefit(_stage_of(stage))
 
     def _avoided(aoi: AOI, stage) -> tuple[dict, dict]:
-        return _wrap(analyze_avoided_deforestation_emissions(
-            aoi, duration_years, rate_pct, _stage_of(stage)))
+        return analyze_avoided_deforestation_emissions(
+            aoi, duration_years, rate_pct, _stage_of(stage))
 
     def _arr(aoi: AOI) -> tuple[dict, dict]:
-        return _wrap(analyze_arr_sequestration(aoi, duration_years))
+        return analyze_arr_sequestration(aoi, duration_years)
 
     def _gross_of(dep: tuple[dict, dict]) -> float | None:
         _, view = dep
         if view.get('applicable'):
-            return view['values']['total_tco2e']
+            return view['total_tco2e']
         return None
-
-    def _deactivated(component: str) -> tuple[dict, dict]:
-        return _wrap(ComponentResult(component=component, applicable=False,
-                                     narrative=_DEACTIVATED, missing=[_DEACTIVATED]))
 
     def _net_er(aoi: AOI, avoided) -> tuple[dict, dict]:
         if not carbon_project:
-            return _deactivated("5.4 Net carbon emission reduction")
+            return _na_pair(_DEACTIVATED)
         gross = _gross_of(avoided)
         if gross is None:
-            return _wrap(ComponentResult(
-                component="5.4 Net carbon emission reduction", applicable=False,
-                narrative="5.2 is not applicable on this site, so there is no gross emission "
-                          "reduction to deduct from.",
-                missing=["5.2 is not applicable on this site."]))
-        return _wrap(net_emission_reduction(gross, leakage, uncertainty, buffer))
+            return _na_pair("5.2 is not applicable on this site, so there is no gross "
+                            "emission reduction to deduct from.")
+        return net_emission_reduction(gross, leakage, uncertainty, buffer)
 
     def _net_removal(aoi: AOI, arr) -> tuple[dict, dict]:
         if not carbon_project:
-            return _deactivated("5.5 Net carbon sequestration")
+            return _na_pair(_DEACTIVATED)
         gross = _gross_of(arr)
         if gross is None:
-            return _wrap(ComponentResult(
-                component="5.5 Net carbon sequestration", applicable=False,
-                narrative="5.3 is not applicable on this site, so there is no gross removal to "
-                          "deduct from.",
-                missing=["5.3 is not applicable on this site."]))
-        return _wrap(net_carbon_removal(gross, leakage, uncertainty, buffer))
+            return _na_pair("5.3 is not applicable on this site, so there is no gross "
+                            "removal to deduct from.")
+        return net_carbon_removal(gross, leakage, uncertainty, buffer)
 
     def _net_errs_c(aoi: AOI, avoided, arr) -> tuple[dict, dict]:
         if not carbon_project:
-            return _deactivated("5.6 Estimated net emission reduction and removals (Net ERRs)")
-        gross = (_gross_of(avoided) or 0.0) + (_gross_of(arr) or 0.0)
-        if gross <= 0:
-            return _wrap(ComponentResult(
-                component="5.6 Estimated net emission reduction and removals (Net ERRs)",
-                applicable=False,
-                narrative="Neither 5.2 nor 5.3 is applicable on this site, so there are no "
-                          "gross ERRs to deduct from.",
-                missing=["Neither 5.2 nor 5.3 is applicable on this site."]))
-        return _wrap(net_errs(gross, leakage, uncertainty, buffer, duration_years))
+            return _na_pair(_DEACTIVATED)
+        gross_er = _gross_of(avoided) or 0.0
+        gross_removal = _gross_of(arr) or 0.0
+        if gross_er + gross_removal <= 0:
+            return _na_pair("Neither 5.2 nor 5.3 is applicable on this site, so there are no "
+                            "gross ERRs to deduct from.")
+        return net_errs(gross_er, gross_removal, leakage, uncertainty, buffer, duration_years)
 
     def _habitat(aoi: AOI) -> tuple[dict, dict]:
-        return _wrap(analyze_habitat_loss_avoided(aoi, duration_years, rate_pct,
-                                                  ecosystem_class))
+        return analyze_habitat_loss_avoided(aoi, duration_years, rate_pct, ecosystem_class)
 
     def _threatened(aoi: AOI) -> tuple[dict, dict]:
-        return _wrap(analyze_threatened_species_habitat(aoi, duration_years, rate_pct,
-                                                        ecosystem_class))
+        return analyze_threatened_species_habitat(aoi, duration_years, rate_pct,
+                                                  ecosystem_class)
+
+    def _uplift(aoi: AOI) -> tuple[dict, dict]:
+        return analyze_biodiversity_uplift(aoi, duration_years)
+
+    def _resilience(aoi: AOI) -> tuple[dict, dict]:
+        return analyze_climate_resilience(aoi, duration_years)
+
+    def _microclimate(aoi: AOI) -> tuple[dict, dict]:
+        return analyze_microclimate(aoi, duration_years, ecosystem_class)
 
     return {
         'assumptions': (_assumptions, ()),
@@ -277,6 +259,9 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         'net_errs': (_net_errs_c, ('avoided_emissions', 'arr_sequestration')),
         'habitat_loss_avoided': (_habitat, ()),
         'threatened_species_habitat': (_threatened, ()),
+        'biodiversity_uplift': (_uplift, ()),
+        'climate_resilience': (_resilience, ()),
+        'microclimate': (_microclimate, ()),
     }
 
 
@@ -319,7 +304,7 @@ def stream_benefit(aoi: AOI, duration_years: int = INTERVENTION_DURATION_DEFAULT
                    rate_pct: float | None = None, carbon_project: bool = True,
                    leakage: float | None = None, uncertainty: float | None = None,
                    buffer: float | None = None, ecosystem_class: int = ECOSYSTEM_CLASS,
-                   selections=None, wanted: list[str] | None = None):
+                   selections=None, wanted: list[str] | None = None, people_benefits=None):
     """The F02-P5 components as NDJSON lines, one per component, cheapest first."""
     if leakage is None:
         leakage = CARBON_RISK_DEFAULTS["leakage_percentage"]
@@ -330,7 +315,8 @@ def stream_benefit(aoi: AOI, duration_years: int = INTERVENTION_DURATION_DEFAULT
     validate(duration_years, leakage, uncertainty, buffer)
 
     components = _components(duration_years, rate_pct, carbon_project,
-                             leakage, uncertainty, buffer, ecosystem_class, selections)
+                             leakage, uncertainty, buffer, ecosystem_class, selections,
+                             people_benefits)
     order = _order(components)
     emitted = [n for n in order if n not in _HIDDEN and (wanted is None or n in wanted)]
 

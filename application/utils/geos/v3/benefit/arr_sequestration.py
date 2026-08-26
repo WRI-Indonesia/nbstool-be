@@ -16,10 +16,8 @@ import numpy as np
 try:
     from ..common import (
         AOI,
-        ComponentResult,
         fmt_ha,
         load_raster_clipped,
-        not_applicable,
         safe_pct,
     )
     from ..config import (
@@ -67,10 +65,8 @@ except ImportError:  # `python arr_sequestration.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     from common import (
         AOI,
-        ComponentResult,
         fmt_ha,
         load_raster_clipped,
-        not_applicable,
         safe_pct,
     )
     from config import (
@@ -197,10 +193,14 @@ def _arr_dryland_zone(aoi: AOI, like_slice):
     return zone, inputs_valid
 
 
-def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
-    """Component 5.3. Ex-ante carbon removal from ARR restoration on the Restore area, in tCO2e."""
-    component = "5.3 ARR Carbon Removal (ex-ante)"
+def _na(reason: str) -> tuple[dict, dict]:
+    """Nothing to quantify -- `missing` drives error_status `failed`, the answer not a fault."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
 
+
+def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> tuple[dict, dict]:
+    """Component 5.3. Ex-ante carbon removal from ARR restoration on the Restore area, in tCO2e."""
     if duration_years < 1:
         raise ValueError("PROJECT_DURATION_YEARS must be a whole number of years, at least 1.")
 
@@ -214,10 +214,9 @@ def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
 
     restore = (pathway.values == RESTORE_CODE).filled(False)
     if not restore.any():
-        return not_applicable(
-            component,
+        return _na(
             "No area of this project falls under the Restore pathway, so ARR carbon removal "
-            "cannot be estimated.",
+            "cannot be estimated."
         )
 
     catv = cat.values.filled(0).astype(int)
@@ -296,10 +295,9 @@ def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
             agb_valid_quant_ha += int((gmask & agb_valid).sum()) * pix
 
     if not groups:
-        return not_applicable(
-            component,
+        return _na(
             "No Restore area carries an ARR activity eligible for carbon sequestration (planting "
-            "or ANR on dryland or mangrove), so ex-ante carbon removal cannot be estimated.",
+            "or ANR on dryland or mangrove), so ex-ante carbon removal cannot be estimated."
         )
 
     total = sum(g.net_tco2e for g in groups)
@@ -314,15 +312,16 @@ def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
     # Dryland pixels that could not be zoned and fell to the default.
     zone_defaulted_ha = int((quantified & (ecov == 1) & ~zone_valid).sum()) * pix
 
-    flags: list[str] = []
+    # Permanent methodology caveats -- `notes`, never `flags`: they must not drive error_status.
+    notes: list[str] = []
     cov = safe_pct(agb_valid_quant_ha, quantified_ha)
     if ARR_BASELINE_MODE == "per_pixel_agb" and cov < CARBON_COVERAGE_WARN_PCT:
-        flags.append(
+        notes.append(
             f"5.3: the AGB raster covers only {cov:.0f}% of the quantified area. Missing AGB is "
             "read as zero baseline, so no standing biomass is deducted there and the removal is "
             "over-estimated by an unknown amount."
         )
-    flags.append(
+    notes.append(
         f"5.3: baseline mode is '{ARR_BASELINE_MODE}'. The class-based values are PLACEHOLDERS "
         f"(C4 {ARR_BASELINE_CLASS_MGHA['C4']:g}, C5 {ARR_BASELINE_CLASS_MGHA['C5']:g}, "
         f"C6 {ARR_BASELINE_CLASS_MGHA['C6']:g} Mg/ha) pending references, so the total is "
@@ -330,27 +329,27 @@ def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
         f"tCO2e and gross (no baseline) {gross_tco2e:,.0f}."
     )
     if savanna_ha > 0:
-        flags.append(
+        notes.append(
             f"5.3: {fmt_ha(savanna_ha)} of Restore area is savanna, whose carbon is deferred "
             "(recovery is mainly soil and roots). Activity and benefits still apply."
         )
     if peat_ha > 0:
-        flags.append(
+        notes.append(
             f"5.3: {fmt_ha(peat_ha)} of Restore area is peatland, temporarily excluded from "
             "carbon quantification by team decision (the biomass method and rates exist; remove "
             "peatland from ARR_CARBON_DEFERRED_ECO to re-enable). Activity and benefits still apply."
         )
     if zone_defaulted_ha > 0:
-        flags.append(
+        notes.append(
             f"5.3: {fmt_ha(zone_defaulted_ha)} of dryland could not be zoned (missing elevation "
             "or precipitation) and defaulted to the seasonal-lowland rate."
         )
     if duration_years > ARR_OLD_END_YEAR:
-        flags.append(
+        notes.append(
             f"5.3: the accumulation curve is defined only to year {ARR_OLD_END_YEAR}; the "
             f"{duration_years - ARR_OLD_END_YEAR} years beyond it add no further removal."
         )
-    flags.append(
+    notes.append(
         "5.3: the ANR/EMR stocking factor (0.8) and the planting-vs-ANR split are uncalibrated. "
         "Dryland zones use elevation and 12-band monthly precipitation (units to verify), with a "
         "dry month defined as below 100 mm (Walsh 1996)."
@@ -376,42 +375,51 @@ def analyze_arr_sequestration(aoi: AOI, duration_years: int) -> ComponentResult:
     )
 
     groups_sorted = sorted(groups, key=lambda g: -g.net_tco2e)
-    return ComponentResult(
-        component=component,
-        applicable=True,
-        narrative=narrative,
-        tables={
-            "annual_projection": [ArrYear(t + 1, annual[t]) for t in range(duration_years)],
-            "groups": groups_sorted,
-        },
-        values={
-            "total_tco2e": total,                # headline central estimate
-            "total_low_tco2e": total_low,
-            "total_high_tco2e": total_high,
-            "duration_years": duration_years,
-            "quantified_ha": quantified_ha,
-            "baseline_mode": ARR_BASELINE_MODE,
-            "total_gross_tco2e": gross_tco2e,
-            "net_perpixel_gedi_tco2e": net_gedi_tco2e,
-            "net_classbaseline_tco2e": net_classbaseline_tco2e,
-            "gedi_baseline_zeroed_ha": clamped_ha,   # diagnostic on the GEDI baseline
-            "net_by_ecosystem_tco2e": net_by_ecosystem,
-            "area_by_ecosystem_ha": area_by_ecosystem,
-            "area_by_dryland_zone_ha": area_by_dryland_zone,
-            "agb_coverage_pct": cov,
-            "zone_defaulted_ha": zone_defaulted_ha,
-            "deferred_savanna_ha": savanna_ha,
-            "deferred_peat_ha": peat_ha,
-            "peat_excluded": True,
-            "deferred_other_ha": other_deferred_ha,
-            "method": "reference-rate / yield-curve, NBS-v3-ANX-B v2",
-            "pools_included": ["aboveground biomass", "belowground biomass"],
-            "pools_excluded": ["soil organic carbon", "peat soil", "dead wood", "litter",
-                               "avoided emissions"],
-            "uncertainty": {"low": ARR_UNCERTAINTY_LOW, "high": ARR_UNCERTAINTY_HIGH},
-        },
-        flags=flags,
-    )
+    annual_rows = [ArrYear(t + 1, annual[t]) for t in range(duration_years)]
+    values = {
+        "total_tco2e": total,                # headline central estimate
+        "total_low_tco2e": total_low,
+        "total_high_tco2e": total_high,
+        "duration_years": duration_years,
+        "quantified_ha": quantified_ha,
+        "baseline_mode": ARR_BASELINE_MODE,
+        "total_gross_tco2e": gross_tco2e,
+        "net_perpixel_gedi_tco2e": net_gedi_tco2e,
+        "net_classbaseline_tco2e": net_classbaseline_tco2e,
+        "gedi_baseline_zeroed_ha": clamped_ha,   # diagnostic on the GEDI baseline
+        "net_by_ecosystem_tco2e": net_by_ecosystem,
+        "area_by_ecosystem_ha": area_by_ecosystem,
+        "area_by_dryland_zone_ha": area_by_dryland_zone,
+        "agb_coverage_pct": cov,
+        "zone_defaulted_ha": zone_defaulted_ha,
+        "deferred_savanna_ha": savanna_ha,
+        "deferred_peat_ha": peat_ha,
+        "peat_excluded": True,
+        "deferred_other_ha": other_deferred_ha,
+        "method": "reference-rate / yield-curve, NBS-v3-ANX-B v2",
+        "pools_included": ["aboveground biomass", "belowground biomass"],
+        "pools_excluded": ["soil organic carbon", "peat soil", "dead wood", "litter",
+                           "avoided emissions"],
+        "uncertainty": {"low": ARR_UNCERTAINTY_LOW, "high": ARR_UNCERTAINTY_HIGH},
+    }
+    results = {
+        'narrative': narrative,
+        'tables': {"annual_projection": annual_rows, "groups": groups_sorted},
+        'values': values,
+        'flags': [],
+        'notes': notes,
+    }
+    # The card contract: central estimate with its indicative range and the removal curve.
+    view_results = {
+        'applicable': True,
+        'narrative': narrative,
+        **{k: values[k] for k in (
+            'total_tco2e', 'total_low_tco2e', 'total_high_tco2e',
+            'duration_years', 'quantified_ha')},
+        'annual_projection': annual_rows,
+        'notes': notes,
+    }
+    return results, view_results
 
 if __name__ == "__main__":
     # Run this component on its own, no Flask app and no database:
@@ -435,11 +443,10 @@ if __name__ == "__main__":
 
     aoi = prepare_aoi(gpd.read_file(aoi_path))
     t0 = time.perf_counter()
-    result = analyze_arr_sequestration(aoi, duration)
+    results, view_results = analyze_arr_sequestration(aoi, duration)
     elapsed = time.perf_counter() - t0
 
     print(f"AOI: {aoi.area_ha:,.0f} ha, duration {duration} y  [{elapsed:.1f}s]\n")
-    payload = to_jsonable(result)
-    payload["tables"]["annual_projection"] = payload["tables"].get("annual_projection", [])[:3]
-    payload["tables"]["groups"] = payload["tables"].get("groups", [])[:5]
+    payload = to_jsonable(view_results)
+    payload["annual_projection"] = payload.get("annual_projection", [])[:3]
     print(json.dumps(payload, indent=2, ensure_ascii=False))

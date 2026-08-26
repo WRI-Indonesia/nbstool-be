@@ -33,7 +33,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import Resampling
 
 try:
-    from ..common import AOI, ComponentResult, not_applicable
+    from ..common import AOI
     from ..config import (
         AOH_GDAL_OPTIONS,
         AOH_MAX_WORKERS,
@@ -53,7 +53,7 @@ except ImportError:  # `python habitat_loss_avoided.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
                            / "site_characterisation" / "nature"))
-    from common import AOI, ComponentResult, not_applicable
+    from common import AOI
     from config import (
         AOH_GDAL_OPTIONS,
         AOH_MAX_WORKERS,
@@ -68,16 +68,19 @@ except ImportError:  # `python habitat_loss_avoided.py`: no package around it
     from settings import layer_path
 
 
-def analyze_habitat_loss_avoided(aoi: AOI, duration_years: int, rate_pct: float | None,
-                                 ecosystem_class: int = ECOSYSTEM_CLASS) -> ComponentResult:
-    """Component 5.9. Suitable habitat whose projected loss the project avoids, in hectares."""
-    component = "5.9 Enhanced biodiversity and ecosystem function"
+def _na(reason: str) -> tuple[dict, dict]:
+    """Nothing to measure -- `missing` drives error_status `failed`, the answer not a fault."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
 
+
+def analyze_habitat_loss_avoided(aoi: AOI, duration_years: int, rate_pct: float | None,
+                                 ecosystem_class: int = ECOSYSTEM_CLASS) -> tuple[dict, dict]:
+    """Component 5.9. Suitable habitat whose projected loss the project avoids, in hectares."""
     if rate_pct is None:
-        return not_applicable(
-            component,
+        return _na(
             "No historical deforestation rate is available for this project area, so projected "
-            "habitat loss cannot be estimated.",
+            "habitat loss cannot be estimated."
         )
 
     with rasterio.Env(**AOH_GDAL_OPTIONS):
@@ -170,10 +173,9 @@ def analyze_habitat_loss_avoided(aoi: AOI, duration_years: int, rate_pct: float 
 
         if ecosystem_area <= 0:
             risk_src.close()
-            return not_applicable(
-                component,
+            return _na(
                 f"This project area contains no {ECOSYSTEM_NAMES.get(ecosystem_class, 'target')} "
-                "ecosystem, so there is no habitat to assess.",
+                "ecosystem, so there is no habitat to assess."
             )
 
         projected_loss = (
@@ -286,23 +288,28 @@ def analyze_habitat_loss_avoided(aoi: AOI, duration_years: int, rate_pct: float 
         f"over the project's {duration_years}-year duration."
     )
 
-    return ComponentResult(
-        component=component,
-        applicable=True,
-        narrative=narrative,
-        values={
-            "ecosystem": name,
-            "duration_years": duration_years,
-            "rate_pct": rate_pct,
-            "ecosystem_area_ha": float(ecosystem_area),
-            "risk_area_ha": float(risk_area),
-            "projected_loss_ha": float(projected_loss),
-            "current_habitat_ha": float(current_habitat),
-            "habitat_loss_avoided_ha": float(habitat_avoided),
-            "species_affected": int(species_count),
-            "candidate_species": int(len(candidates)),
-        },
-    )
+    values = {
+        "ecosystem": name,
+        "duration_years": duration_years,
+        "rate_pct": rate_pct,
+        "ecosystem_area_ha": float(ecosystem_area),
+        "risk_area_ha": float(risk_area),
+        "projected_loss_ha": float(projected_loss),
+        "current_habitat_ha": float(current_habitat),
+        "habitat_loss_avoided_ha": float(habitat_avoided),
+        "species_affected": int(species_count),
+        "candidate_species": int(len(candidates)),
+    }
+    results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
+    # The card contract: hectares safeguarded (headline) and the numbers its narrative bolds.
+    view_results = {
+        'applicable': True,
+        'narrative': narrative,
+        **{k: values[k] for k in (
+            'ecosystem', 'duration_years', 'current_habitat_ha', 'projected_loss_ha',
+            'habitat_loss_avoided_ha', 'species_affected')},
+    }
+    return results, view_results
 
 
 if __name__ == "__main__":
@@ -326,6 +333,6 @@ if __name__ == "__main__":
 
     aoi = prepare_aoi(gpd.read_file(aoi_path))
     t0 = time.perf_counter()
-    result = analyze_habitat_loss_avoided(aoi, duration, rate)
+    results, view_results = analyze_habitat_loss_avoided(aoi, duration, rate)
     print(f"[{time.perf_counter() - t0:.1f}s]")
-    print(json.dumps(to_jsonable(result), indent=2, ensure_ascii=False, default=str))
+    print(json.dumps(to_jsonable(view_results), indent=2, ensure_ascii=False, default=str))

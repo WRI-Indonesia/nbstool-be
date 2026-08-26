@@ -10,13 +10,19 @@ the caller supplies the same stage shape run_benefit builds for 5.2.
 from __future__ import annotations
 
 try:
-    from ..common import ComponentResult, component_values, not_applicable
+    from ..common import component_values
 except ImportError:  # `python general_benefit.py`: no package around it
     import pathlib
     import sys
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-    from common import ComponentResult, component_values, not_applicable
+    from common import component_values
+
+
+def _na(reason: str) -> tuple[dict, dict]:
+    """Nothing to list -- `missing` drives error_status `failed`, the answer not a fault."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
 
 
 # 5.1 General Benefit -------------------------------------------------------------------
@@ -51,27 +57,23 @@ def _split_benefit_phrases(cell: str) -> list[str]:
     return out
 
 
-def analyze_general_benefit(pathway_stage: dict) -> ComponentResult:
+def analyze_general_benefit(pathway_stage: dict) -> tuple[dict, dict]:
     """Component 5.1. Per pathway present in the AOI, list its activities and their benefits,
     split into nature, climate and people.
 
     Reads 4.2's `by_category` output. No new layer, no area weighting, no ranking.
     """
-    component = "5.1 General Benefit"
-
     try:
         by_category = component_values(pathway_stage, "4.2")["by_category"]
     except KeyError:
-        return not_applicable(
-            component,
+        return _na(
             "The activity list (4.2) is not available for this project area. Run F02-P4 for "
-            "this AOI first.",
+            "this AOI first."
         )
     if not by_category:
-        return not_applicable(
-            component,
+        return _na(
             "The activity list (4.2) found no categories in this project area, so there are no "
-            "activities or benefits to list.",
+            "activities or benefits to list."
         )
 
     # pathway -> {"activities": {activity_id: text}, "benefits": {pillar: set(phrases)}}
@@ -92,9 +94,8 @@ def analyze_general_benefit(pathway_stage: dict) -> ComponentResult:
                     slot["benefits"][pillar].add(phrase)
 
     if not collected:
-        return not_applicable(
-            component,
-            "No activity in this project area declares a benefit, so no benefits can be listed.",
+        return _na(
+            "No activity in this project area declares a benefit, so no benefits can be listed."
         )
 
     by_pathway: dict[str, dict] = {}
@@ -121,14 +122,21 @@ def analyze_general_benefit(pathway_stage: dict) -> ComponentResult:
             for benefit in benefits[pillar]:
                 benefit_rows.append({"pathway": pw, "pillar": pillar, "benefit": benefit})
 
-    return ComponentResult(
-        component=component,
-        applicable=True,
-        narrative="",  # no render: by_pathway and the two tables carry everything
-        tables={"activities": activity_rows, "benefits": benefit_rows},
-        values={
+    results = {
+        'narrative': "",  # no render: by_pathway and the two row lists carry everything
+        'tables': {"activities": activity_rows, "benefits": benefit_rows},
+        'values': {
             "by_pathway": by_pathway,
             "pathways_present": list(by_pathway),
         },
-        flags=[],
-    )
+        'flags': [],
+    }
+    # The card's tag row and pillar grouping come straight from the two row lists.
+    view_results = {
+        'applicable': True,
+        'narrative': "",
+        'pathways_present': list(by_pathway),
+        'activities': activity_rows,
+        'benefits': benefit_rows,
+    }
+    return results, view_results

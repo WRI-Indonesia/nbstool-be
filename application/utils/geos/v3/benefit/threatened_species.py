@@ -27,7 +27,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import Resampling
 
 try:
-    from ..common import AOI, ComponentResult, not_applicable
+    from ..common import AOI
     from ..config import (
         AOH_GDAL_OPTIONS,
         AOH_MAX_WORKERS,
@@ -49,7 +49,7 @@ except ImportError:  # `python threatened_species.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
                            / "site_characterisation" / "nature"))
-    from common import AOI, ComponentResult, not_applicable
+    from common import AOI
     from config import (
         AOH_GDAL_OPTIONS,
         AOH_MAX_WORKERS,
@@ -66,16 +66,19 @@ except ImportError:  # `python threatened_species.py`: no package around it
     from settings import layer_path
 
 
-def analyze_threatened_species_habitat(aoi: AOI, duration_years: int, rate_pct: float | None,
-                                       ecosystem_class: int = ECOSYSTEM_CLASS) -> ComponentResult:
-    """Component 5.10. Threatened species whose habitat overlaps projected deforestation."""
-    component = "5.10 Reduced vulnerability to fire, pests, and disease"
+def _na(reason: str) -> tuple[dict, dict]:
+    """Nothing to measure -- `missing` drives error_status `failed`, the answer not a fault."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
 
+
+def analyze_threatened_species_habitat(aoi: AOI, duration_years: int, rate_pct: float | None,
+                                       ecosystem_class: int = ECOSYSTEM_CLASS) -> tuple[dict, dict]:
+    """Component 5.10. Threatened species whose habitat overlaps projected deforestation."""
     if rate_pct is None:
-        return not_applicable(
-            component,
+        return _na(
             "No historical deforestation rate is available for this project area, so projected "
-            "habitat loss cannot be estimated.",
+            "habitat loss cannot be estimated."
         )
 
     with rasterio.Env(**AOH_GDAL_OPTIONS):
@@ -297,25 +300,32 @@ def analyze_threatened_species_habitat(aoi: AOI, duration_years: int, rate_pct: 
         f"for {benefiting_species} threatened species."
     )
 
-    return ComponentResult(
-        component=component,
-        applicable=True,
-        narrative=narrative,
-        tables={"species": species_df.to_dict(orient="records")},
-        values={
-            "duration_years": duration_years,
-            "rate_pct": rate_pct,
-            "projected_loss_ha": float(projected_loss),
-            "species_with_habitat": int(total_species),
-            "threatened_count": int(threatened_count),
-            "threatened_pct": float(threatened_pct),
-            "cr": int(cr),
-            "en": int(en),
-            "vu": int(vu),
-            "avoided_habitat_loss_pct": float(avoided_habitat_loss_pct),
-            "benefiting_species": int(benefiting_species),
-        },
-    )
+    species_rows = species_df.to_dict(orient="records")
+    values = {
+        "duration_years": duration_years,
+        "rate_pct": rate_pct,
+        "projected_loss_ha": float(projected_loss),
+        "species_with_habitat": int(total_species),
+        "threatened_count": int(threatened_count),
+        "threatened_pct": float(threatened_pct),
+        "cr": int(cr),
+        "en": int(en),
+        "vu": int(vu),
+        "avoided_habitat_loss_pct": float(avoided_habitat_loss_pct),
+        "benefiting_species": int(benefiting_species),
+    }
+    results = {'narrative': narrative, 'tables': {"species": species_rows}, 'values': values,
+               'flags': []}
+    # The card contract: species counts (headline), CR/EN/VU split and the per-species rows.
+    view_results = {
+        'applicable': True,
+        'narrative': narrative,
+        **{k: values[k] for k in (
+            'duration_years', 'species_with_habitat', 'threatened_count', 'threatened_pct',
+            'cr', 'en', 'vu', 'avoided_habitat_loss_pct', 'benefiting_species')},
+        'species': species_rows,
+    }
+    return results, view_results
 
 
 if __name__ == "__main__":
@@ -339,8 +349,8 @@ if __name__ == "__main__":
 
     aoi = prepare_aoi(gpd.read_file(aoi_path))
     t0 = time.perf_counter()
-    result = analyze_threatened_species_habitat(aoi, duration, rate)
+    results, view_results = analyze_threatened_species_habitat(aoi, duration, rate)
     print(f"[{time.perf_counter() - t0:.1f}s]")
-    out = to_jsonable(result)
-    out["tables"]["species"] = out["tables"]["species"][:8]
+    out = to_jsonable(view_results)
+    out["species"] = out.get("species", [])[:8]
     print(json.dumps(out, indent=2, ensure_ascii=False, default=str))

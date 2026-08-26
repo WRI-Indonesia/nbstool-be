@@ -1,36 +1,33 @@
 """
 Component 5.6 Estimated net emission reduction and removals, Net ERRs (F02-P5 Benefit).
 
-FORMULAS AND NARRATIVE VERBATIM from the notebook cell (F02-P5 Benefit.ipynb, 2026-08-25). Note
-the formula DIFFERS from 5.4/5.5 on purpose: leakage and uncertainty come off the gross first,
-then the buffer is taken from the ADJUSTED figure, and the narrative reports the buffer as
-withheld separately for non-permanence rather than as a loss.
+FORMULAS AND NARRATIVE VERBATIM from the notebook cell (F02-P5 Benefit.ipynb, commit `ae3c786`
++ `f64407a`, 2026-08-26): the adjusted figure is 5.4's intermediates plus 5.5's --
+`(gross_er - leakage_er - uncertainty_er) + (gross_removal - leakage_removal -
+uncertainty_removal)` -- and the buffer is then taken from the ADJUSTED figure, deliberately
+unlike 5.4/5.5 which take it from their gross. The earlier port assumed exactly this combined
+gross; the data team's rework confirmed it.
 
-SEAM ASSUMPTION, surfaced: the notebook cell reads a `gross_err` that no earlier cell defines
-(the notebook is mid-rework). The section title says "reduction AND removals", so the caller
-supplies gross = 5.2's total + 5.3's total, whichever of the two are applicable. Re-check this
-against the notebook when the Benefit rework settles.
+Two notebook artefacts carried verbatim: the narrative's missing space ("grosspotential" -- the
+f-string joins "gross" straight onto "potential"), and its `gross_err` variable, which no cell
+defines; the sum of the two grosses is the only reading consistent with the formula and is what
+this function prints there.
 """
 
 from __future__ import annotations
 
-try:
-    from ..common import ComponentResult
-except ImportError:  # `python net_errs.py`: no package around it
-    import pathlib
-    import sys
 
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-    from common import ComponentResult
+def net_errs(gross_er: float, gross_removal: float, leakage: float, uncertainty: float,
+             buffer: float, project_duration: int) -> tuple[dict, dict]:
+    """Component 5.6. The notebook cell's arithmetic, per-component deductions then the sum,
+    so the floating-point path matches the cell exactly."""
+    leakage_er = gross_er * leakage / 100
+    uncertainty_er = gross_er * uncertainty / 100
+    leakage_removal = gross_removal * leakage / 100
+    uncertainty_removal = gross_removal * uncertainty / 100
+    gross_err = gross_er + gross_removal
 
-
-def net_errs(gross_err: float, leakage: float, uncertainty: float, buffer: float,
-             project_duration: int) -> ComponentResult:
-    """Component 5.6. The notebook cell's arithmetic, verbatim."""
-    leakage_err = gross_err * leakage / 100
-    uncertainty_err = gross_err * uncertainty / 100
-
-    adjusted_err = gross_err - leakage_err - uncertainty_err
+    adjusted_err = (gross_er - leakage_er - uncertainty_er) + (gross_removal - leakage_removal - uncertainty_removal)
     buffer_err = adjusted_err * buffer / 100
     net_err = adjusted_err - buffer_err
 
@@ -40,31 +37,27 @@ def net_errs(gross_err: float, leakage: float, uncertainty: float, buffer: float
         f"Over a {project_duration} year crediting period, the project area could "
         f"generate an estimated {net_err:,.0f} tCO2e in emission reductions and removals, "
         f"equivalent to an average of {annual_err:,.0f} tCO2e per year. "
-        f"This estimate accounts for leakage and uncertainty deductions from a gross "
-        f"potential of {gross_err:,.0f} tCO2e. It does not include the buffer pool "
-        f"contribution, which is withheld separately to address non-permanence risk."
+        f"This figure already subtracts leakage and uncertainty deductions from the gross"
+        f"potential of {gross_err:,.0f} tCO2e. It does not yet subtract the buffer pool "
+        f"contribution, which is held to cover non-permanence risk."
     )
 
-    return ComponentResult(
-        component="5.6 Estimated net emission reduction and removals (Net ERRs)",
-        applicable=True,
-        narrative=narrative,
-        values={
-            "gross_tco2e": gross_err,
-            "leakage_pct": leakage,
-            "leakage_tco2e": leakage_err,
-            "uncertainty_pct": uncertainty,
-            "uncertainty_tco2e": uncertainty_err,
-            "adjusted_tco2e": adjusted_err,
-            "buffer_pct": buffer,
-            "buffer_tco2e": buffer_err,
-            "net_tco2e": net_err,              # headline
-            "annual_mean_tco2e": annual_err,
-            "duration_years": project_duration,
-        },
-        flags=[
-            "5.6: gross is taken as 5.2 avoided emissions plus 5.3 removals; the notebook cell "
-            "reads an undefined `gross_err`, so this combination is a port assumption pending "
-            "the Benefit rework settling."
-        ],
-    )
+    # The whole breakdown IS the card's formula line, so results and view carry the same fields.
+    values = {
+        "gross_tco2e": gross_err,
+        "gross_emission_reduction_tco2e": gross_er,
+        "gross_removal_tco2e": gross_removal,
+        "leakage_pct": leakage,
+        "leakage_tco2e": leakage_er + leakage_removal,
+        "uncertainty_pct": uncertainty,
+        "uncertainty_tco2e": uncertainty_er + uncertainty_removal,
+        "adjusted_tco2e": adjusted_err,
+        "buffer_pct": buffer,
+        "buffer_tco2e": buffer_err,
+        "net_tco2e": net_err,              # headline
+        "annual_mean_tco2e": annual_err,
+        "duration_years": project_duration,
+    }
+    results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
+    view_results = {'applicable': True, 'narrative': narrative, **values}
+    return results, view_results

@@ -549,6 +549,12 @@ def geo_feature_benefit_v3():
         selections = payload.get('selections')
         if selections is not None and not isinstance(selections, dict):
             raise AppMessageException('fail, selections must be an object keyed by ecosystem')
+        # People-tab benefit statements, user-specified on the benefit screen. Stored verbatim
+        # on the assumptions line; saving after the fact is a re-POST with process:
+        # ["assumptions"] and this dict -- no analysis re-runs.
+        people_benefits = payload.get('people_benefits')
+        if people_benefits is not None and not isinstance(people_benefits, dict):
+            raise AppMessageException('fail, people_benefits must be an object keyed by card')
 
         # Partial re-runs: `process` in the body names the components to re-emit, mirroring the
         # `?process=` contract of the GET streams. The endpoint is POST, so `retry_url` on the
@@ -585,7 +591,7 @@ def geo_feature_benefit_v3():
     lines = _limit_slots(persist_ndjson(
         stream_benefit(aoi, duration_years, rate_pct, carbon_project,
                        leakage, uncertainty, buffer, ecosystem_class,
-                       selections, wanted),
+                       selections, wanted, people_benefits),
         session_id, lambda name: ('benefit_json', True)))
 
     return Response(

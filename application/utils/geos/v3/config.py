@@ -1312,3 +1312,21 @@ IUCN_MAP = {
     "EN": "EN",
     "VU": "VU",
 }
+
+# ---------------------------------------------------------------------------------------
+# 5.11 Improved forest productivity / 5.12 climate resilience / 5.13 microclimate
+# (Benefit modules, notebook constants; local paths map to the bucket objects noted in the
+#  notebook's own comments)
+# ---------------------------------------------------------------------------------------
+FOREST_CHANGE_YEARS = 10    # Defalut value is 10 years based on historical forest change data (2014-2024)
+FOREST_CHANGE_RASTER = "threat/forest_change_v3.tif"
+
+GAIN_CODE = 4
+DEGRADATION_CODE = 2
+
+# 5.12. FuturePop is one band per 5 years, 2025..2100; the flood risk layer is the reference
+# grid, and exposure counts classes 4 (High) and 5 (Very High) of the threat risk layers.
+POP_BASE_YEAR = 2025                #<SET: baseline year based on project duration>
+FUTUREPOP_RASTER = "FuturePop_v3.tif"
+FUTUREPOP_YEARS = list(range(2025, 2101, 5))
+

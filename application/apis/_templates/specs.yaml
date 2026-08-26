@@ -1390,28 +1390,45 @@ paths:
             components (~25 s each) are still reading.
 
             Lines, in emission order: `assumptions` (the run's inputs echoed:
-            duration, carbon_project, carbon_risk, selections), then
+            duration, carbon_project, carbon_risk, selections, plus
+            `people_benefits` -- the six People-tab card slots, null until
+            the user specifies them), then
             `general_benefit` (5.1), `avoided_emissions` (5.2),
-            `net_emission_reduction` (5.4), `arr_sequestration` (5.3),
+            `net_emission_reduction` (5.4), `microclimate` (5.13),
+            `arr_sequestration` (5.3), `climate_resilience` (5.12),
             `net_carbon_removal` (5.5), `net_errs` (5.6),
             `threatened_species_habitat` (5.10), `habitat_loss_avoided`
-            (5.9). Each component line's `data` is the whole component
-            result: `applicable`, `narrative`, `tables`, `values`, `flags`.
+            (5.9), `biodiversity_uplift` (5.11, SD VISta condition-adjusted
+            hectares). Each component line's `data` is a FLAT card contract:
+            `applicable`, `narrative`, plus the fields that component's
+            interactive-map card renders -- e.g. 5.2 `total_tco2e`,
+            `annual_mean_tco2e`, `protect_ha`, `projected_loss_ha`,
+            `annual_projection` rows; 5.4/5.5/5.6 the formula breakdown
+            (`gross_tco2e`, `leakage_pct`/`_tco2e`,
+            `uncertainty_pct`/`_tco2e`, `buffer_pct`/`_tco2e`,
+            `net_tco2e`); 5.10/5.11 species counts (`cr`/`en`/`vu`,
+            `threatened_pct`) and a `species` row list; 5.12 a `hazards`
+            row list with `unique_hazard_area_ha` and
+            `projected_population`; 5.13 `projected_gain_ha`/`_pct`. A
+            not-applicable card is just `applicable: false` plus its
+            `narrative`.
 
             With `carbon_project` false, 5.4/5.5/5.6 still emit as
-            not-applicable "deactivated" cards. A component's own permanent
-            caveats (5.2's rate-window warning, 5.3's placeholder-baseline
-            note) surface through `error_status` with state `failed` -- this
-            is the answer, not a retryable fault -- while the line carries
-            its real numbers.
+            not-applicable "deactivated" cards (state `failed` -- the
+            answer, not a fault). A line that carries a real result has
+            `error_status: null`; the component's own permanent caveats
+            (5.2's rate-window warning, 5.3's placeholder-baseline note)
+            travel inside its `data.notes`, for the card to show, not
+            through the error channel.
         "400":
           $ref: "#/components/responses/Bad Request"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
-        F02-P5 components 5.1 / 5.2 / 5.3 / 5.4 / 5.5 / 5.6 / 5.9 / 5.10
-        (5.7, 5.8, 5.11-5.13 are not ported -- data team's scope), STREAMED.
+        F02-P5 components 5.1-5.6 and 5.9-5.13, STREAMED (5.7 ecological
+        connectivity and 5.8 watershed protection have no notebook script
+        yet).
 
         THE PATHWAY SCREEN'S "Calculate potential benefit" BUTTON CALLS THIS.
         The JSON body carries the screen's state: `duration_years` (the
@@ -1510,6 +1527,27 @@ paths:
                         manage: false
                         restore: true
                         activities: ["111", "321"]
+                people_benefits:
+                  type: object
+                  description: >-
+                    the People tab's "Tap to specify this benefit" answers,
+                    keyed by card: food_water, livelihood, social, equity,
+                    tenure, cultural. Each filled card is `{statement,
+                    answer}` (answer is an array for the livelihood
+                    multi-select); the `assumptions` line always echoes all
+                    six keys, null where unspecified, and persists them.
+                    User-answered, not computed -- to save answers after the
+                    run, re-POST with `process: ["assumptions"]` and this
+                    dict: only that line re-runs and the persisted merge
+                    keeps every other card.
+                  examples:
+                    - food_water:
+                        statement: Enhance food and water security
+                        answer: "No"
+                      livelihood:
+                        statement: Expand livelihood opportunities through
+                          Nursery and Planting work
+                        answer: ["NTFP"]
         required: true
 
   /geos/feature/data-analyzer:

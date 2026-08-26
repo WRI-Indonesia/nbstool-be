@@ -367,15 +367,13 @@ def _people_tags(people: dict) -> dict:
 def _benefit_pillar_counts(benefit: dict) -> dict:
     """Distinct 5.1 benefits per Triple Win pillar, across every pathway -- the template's
     "x Nature / x People / x Climate sub-components scored". Unfilled -> literal bracket text."""
-    by_pathway = ((benefit.get("general_benefit") or {}).get("values", {})
-                  .get("by_pathway") or {})
+    gb = benefit.get("general_benefit") or {}
+    rows = gb.get("benefits") or []  # [{pathway, pillar, benefit}], the 5.1 card's row list
     counts = {}
     for pillar in ("nature", "people", "climate"):
-        distinct: set = set()
-        for slot in by_pathway.values():
-            distinct.update((slot.get("benefits") or {}).get(pillar) or [])
+        distinct = {row.get("benefit") for row in rows if row.get("pillar") == pillar}
         counts[f"benefit_{pillar}_count"] = (
-            str(len(distinct)) if by_pathway else "[Potential Benefit: x]")
+            str(len(distinct)) if gb.get("applicable") else "[Potential Benefit: x]")
     return counts
 
 
@@ -397,17 +395,17 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
     # F02-P5 carbon figures. Net (after carbon-risk deductions) when the project ran as an NbS
     # carbon project, else the gross component totals. Missing entirely -> tags stay unfilled.
     def _carbon(net_key, gross_key):
-        net = (benefit.get(net_key) or {}).get("values", {}).get("net_tco2e")
+        net = (benefit.get(net_key) or {}).get("net_tco2e")
         if net is not None:
             return net
         gross = benefit.get(gross_key) or {}
-        return gross.get("values", {}).get("total_tco2e") if gross.get("applicable") else None
+        return gross.get("total_tco2e") if gross.get("applicable") else None
 
     benefit_avoided = _carbon("net_emission_reduction", "avoided_emissions")
     benefit_sequestered = _carbon("net_carbon_removal", "arr_sequestration")
     # 5.6's combined Net ERRs is the headline total when present (buffer taken on the adjusted
     # figure there, so it is NOT the sum of the 5.4/5.5 nets).
-    net_errs_total = (benefit.get("net_errs") or {}).get("values", {}).get("net_tco2e")
+    net_errs_total = (benefit.get("net_errs") or {}).get("net_tco2e")
 
     tags: dict[str, object] = {}
     if net_errs_total is not None:

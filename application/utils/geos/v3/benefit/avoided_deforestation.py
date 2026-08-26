@@ -19,11 +19,9 @@ import numpy as np
 try:
     from ..common import (
         AOI,
-        ComponentResult,
         component_values,
         fmt_ha,
         load_raster_clipped,
-        not_applicable,
         oxford_join,
         safe_pct,
     )
@@ -52,11 +50,9 @@ except ImportError:  # `python avoided_deforestation.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     from common import (
         AOI,
-        ComponentResult,
         component_values,
         fmt_ha,
         load_raster_clipped,
-        not_applicable,
         oxford_join,
         safe_pct,
     )
@@ -166,17 +162,21 @@ def _protect_qb_avoided_ha(pathway_stage: dict) -> float:
     return area_ha
 
 
+def _na(reason: str) -> tuple[dict, dict]:
+    """Nothing to quantify -- `missing` drives error_status `failed`, the answer not a fault."""
+    return ({'narrative': reason, 'tables': {}, 'values': {}, 'flags': [], 'missing': [reason]},
+            {'applicable': False, 'narrative': reason})
+
+
 def analyze_avoided_deforestation_emissions(
     aoi: AOI, duration_years: int, rate_pct: float | None, pathway_stage: dict
-) -> ComponentResult:
+) -> tuple[dict, dict]:
     """Component 5.2. Avoided emissions from unplanned deforestation on the Protect area, in tCO2e.
 
     `rate_pct` is the annual deforestation rate from 1.5, in percent, measured over the whole
     AOI forest. See the markdown cell for why the Protect area cannot supply its own rate.
     `pathway_stage` is the F02-P4 result, read only for the QB gate below.
     """
-    component = "5.2 Avoided Emissions from Unplanned Deforestation"
-
     if duration_years < 1:
         raise ValueError("PROJECT_DURATION_YEARS must be a whole number of years, at least 1.")
 
@@ -188,11 +188,10 @@ def analyze_avoided_deforestation_emissions(
     # Protect pixels have no matching activity row at all.
     qb_avoided_ha = _protect_qb_avoided_ha(pathway_stage)
     if qb_avoided_ha <= 0:
-        return not_applicable(
-            component,
+        return _na(
             "No Protect-pathway activity in this project area is flagged for avoided-emissions "
             "quantification (QB Avoided Emissions = Yes), so avoided deforestation emissions are "
-            "not quantified for this site.",
+            "not quantified for this site."
         )
 
     # The risk layer defines the working grid. It is already forest masked upstream, and it is
@@ -214,30 +213,29 @@ def analyze_avoided_deforestation_emissions(
     protect_ha = int(pool.sum()) * pixel_area_ha
 
     if protect_ha <= 0:
-        return not_applicable(
-            component,
+        return _na(
             "No forest in this project area falls under the Protect pathway, so avoided "
-            "emissions from deforestation cannot be estimated.",
+            "emissions from deforestation cannot be estimated."
         )
 
     if rate_pct is None:
-        return not_applicable(
-            component,
+        return _na(
             "No historical deforestation rate is available for this project area, so a "
-            "baseline for avoided emissions cannot be projected.",
+            "baseline for avoided emissions cannot be projected."
         )
 
-    flags: list[str] = []
+    # Permanent methodology caveats -- `notes`, never `flags`: they must not drive error_status.
+    notes: list[str] = []
 
     risk_coverage_pct = safe_pct(protect_ha, protect_all_ha)
     if risk_coverage_pct < PROTECT_RISK_COVERAGE_WARN_PCT:
-        flags.append(
+        notes.append(
             f"5.2: the risk layer covers only {risk_coverage_pct:.0f}% of the Protect area. "
             "The remainder carries no projected loss and no avoided emissions."
         )
 
     if duration_years > BASELINE_RATE_MAX_YEARS:
-        flags.append(
+        notes.append(
             f"5.2: the deforestation rate was measured over {DEFOR_PERIOD_YEARS} years and is "
             f"projected over {duration_years}. A rate that far outside its measurement window "
             "is an assumption, not an observation."
@@ -262,7 +260,7 @@ def analyze_avoided_deforestation_emissions(
     # A pool pixel outside the mapping means prob.tif and band 3 disagree about what is forest.
     unmapped_ha = sum(ha for c, ha in ecosystem_ha.items() if c not in PROTECT_ECOSYSTEM_WORDS)
     if unmapped_ha > 0:
-        flags.append(
+        notes.append(
             f"5.2: {fmt_ha(unmapped_ha)} of the Protect area carries a risk value but a "
             "reference ecosystem that is not forest, mangrove or peatland. The risk layer and "
             "pathway band 3 disagree about what is forest."
@@ -270,7 +268,7 @@ def analyze_avoided_deforestation_emissions(
 
     peat_ha = ecosystem_ha.get(PATHWAY_ECOSYSTEM_PEATLAND, 0.0)
     if peat_ha > 0:
-        flags.append(
+        notes.append(
             f"5.2: {fmt_ha(peat_ha)} of the Protect area sits on peatland. Only aboveground and "
             "belowground biomass is counted, and on peat the avoided emission is dominated by "
             "peat oxidation, so this figure is a large under-estimate there."
@@ -288,7 +286,7 @@ def analyze_avoided_deforestation_emissions(
         int((pool & ~np.ma.getmaskarray(agb.values)).sum()) * pixel_area_ha, protect_ha
     )
     if biomass_coverage_pct < CARBON_COVERAGE_WARN_PCT:
-        flags.append(
+        notes.append(
             f"5.2: the biomass raster covers only {biomass_coverage_pct:.0f}% of the Protect "
             "area. Nodata counts as zero carbon, so the estimate is an under-estimate by an "
             "unknown amount."
@@ -340,35 +338,48 @@ def analyze_avoided_deforestation_emissions(
             f"{duration_years} year duration."
         )
 
-    return ComponentResult(
-        component=component,
-        applicable=True,
-        narrative=narrative,
-        tables={"annual_projection": rows},
-        values={
-            "chart_series": "annual_projection",
-            "chart_unit": "tCO2e",
-            "chart_axis_label": "Cumulative avoided emissions (tCO2e)",
-            "total_tco2e": total_tco2e,              # headline big number
-            "annual_mean_tco2e": annual_mean_tco2e,
-            "duration_years": duration_years,        # recorded so a saved result is reproducible
-            "protect_ha": protect_ha,                # measured on the risk grid, not the 4.1 grid
-            "qb_avoided_protect_ha": qb_avoided_ha,  # Protect area with a QB Avoided activity (4.2 grid)
-            "protect_risk_coverage_pct": risk_coverage_pct,
-            "projected_loss_ha": projected_loss_ha,
-            "standing_tco2e": standing_tco2e,        # all carbon on the Protect area
-            "baseline_rate_pct": rate_pct,
-            "baseline_rate_source": "AOI forest 2014 to 2024, component 1.5",
-            "allocation": "descending deforestation risk",
-            "uniform_allocation_tco2e": uniform_tco2e,   # diagnostic, see the markdown cell
-            "peat_ha": peat_ha,
-            "biomass_coverage_pct": biomass_coverage_pct,
-            "pools_included": list(BIOMASS_POOLS),
-            "ecosystem_ha": ecosystem_ha,            # reference ecosystem split of the Protect pool
-            "ecosystem_label": ecosystem_label,      # the word used in the narrative
-        },
-        flags=flags,
-    )
+    values = {
+        "chart_series": "annual_projection",
+        "chart_unit": "tCO2e",
+        "chart_axis_label": "Cumulative avoided emissions (tCO2e)",
+        "total_tco2e": total_tco2e,              # headline big number
+        "annual_mean_tco2e": annual_mean_tco2e,
+        "duration_years": duration_years,        # recorded so a saved result is reproducible
+        "protect_ha": protect_ha,                # measured on the risk grid, not the 4.1 grid
+        "qb_avoided_protect_ha": qb_avoided_ha,  # Protect area with a QB Avoided activity (4.2 grid)
+        "protect_risk_coverage_pct": risk_coverage_pct,
+        "projected_loss_ha": projected_loss_ha,
+        "standing_tco2e": standing_tco2e,        # all carbon on the Protect area
+        "baseline_rate_pct": rate_pct,
+        "baseline_rate_source": "AOI forest 2014 to 2024, component 1.5",
+        "allocation": "descending deforestation risk",
+        "uniform_allocation_tco2e": uniform_tco2e,   # diagnostic, see the markdown cell
+        "peat_ha": peat_ha,
+        "biomass_coverage_pct": biomass_coverage_pct,
+        "pools_included": list(BIOMASS_POOLS),
+        "ecosystem_ha": ecosystem_ha,            # reference ecosystem split of the Protect pool
+        "ecosystem_label": ecosystem_label,      # the word used in the narrative
+    }
+    results = {
+        'narrative': narrative,
+        'tables': {"annual_projection": rows},
+        'values': values,
+        'flags': [],
+        'notes': notes,
+    }
+    # The card contract: headline metric, chart series, and the fields its narrative bolds.
+    view_results = {
+        'applicable': True,
+        'narrative': narrative,
+        **{k: values[k] for k in (
+            'total_tco2e', 'annual_mean_tco2e', 'duration_years', 'ecosystem_label',
+            'protect_ha', 'projected_loss_ha', 'baseline_rate_pct',
+            'chart_unit', 'chart_axis_label')},
+        'annual_projection': rows,
+    }
+    if notes:
+        view_results['notes'] = notes
+    return results, view_results
 
 if __name__ == "__main__":
     # Run this component on its own, no Flask app and no database:
@@ -399,10 +410,10 @@ if __name__ == "__main__":
     stage = {"components": {"4.2": to_jsonable(analyze_activity_list(aoi))}}
 
     t0 = time.perf_counter()
-    result = analyze_avoided_deforestation_emissions(aoi, duration, rate, stage)
+    results, view_results = analyze_avoided_deforestation_emissions(aoi, duration, rate, stage)
     elapsed = time.perf_counter() - t0
 
     print(f"AOI: {aoi.area_ha:,.0f} ha, duration {duration} y, rate {rate}%  [{elapsed:.1f}s]\n")
-    payload = to_jsonable(result)
-    payload["tables"]["annual_projection"] = payload["tables"].get("annual_projection", [])[:3]
+    payload = to_jsonable(view_results)
+    payload["annual_projection"] = payload.get("annual_projection", [])[:3]
     print(json.dumps(payload, indent=2, ensure_ascii=False))

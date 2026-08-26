@@ -14,15 +14,6 @@ contribution must be determined with the Verra AFOLU Non-Permanence Risk Tool at
 
 from __future__ import annotations
 
-try:
-    from ..common import ComponentResult
-except ImportError:  # `python net_carbon.py`: no package around it
-    import pathlib
-    import sys
-
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-    from common import ComponentResult
-
 
 def _deductions(gross: float, leakage: float, uncertainty: float, buffer: float):
     """The notebook's three deduction lines, shared by 5.4 and 5.5."""
@@ -34,52 +25,51 @@ def _deductions(gross: float, leakage: float, uncertainty: float, buffer: float)
 
 
 def net_emission_reduction(gross_er: float, leakage: float, uncertainty: float,
-                           buffer: float) -> ComponentResult:
+                           buffer: float) -> tuple[dict, dict]:
     """Component 5.4. Deductions applied to 5.2's gross emission reduction (`total_tco2e`)."""
     leakage_er, uncertainty_er, buffer_er, net_er = _deductions(
         gross_er, leakage, uncertainty, buffer)
-    return ComponentResult(
-        component="5.4 Net carbon emission reduction",
-        applicable=True,
-        narrative=(
-            f"Net carbon emissions reduction is estimated at {net_er:,.2f} tCO2e "
-            f"after applying deductions to the total estimated carbon reduction "
-            f"of {gross_er:,.2f} tCO2e."
-        ),
-        values={
-            "gross_tco2e": gross_er,
-            "leakage_pct": leakage,
-            "leakage_tco2e": leakage_er,
-            "uncertainty_pct": uncertainty,
-            "uncertainty_tco2e": uncertainty_er,
-            "buffer_pct": buffer,
-            "buffer_tco2e": buffer_er,
-            "net_tco2e": net_er,               # headline
-        },
+    narrative = (
+        f"Net carbon emissions reduction is estimated at {net_er:,.2f} tCO2e "
+        f"after applying deductions to the total estimated carbon reduction "
+        f"of {gross_er:,.2f} tCO2e."
     )
+    # The whole breakdown IS the card's formula line, so results and view carry the same fields.
+    values = {
+        "gross_tco2e": gross_er,
+        "leakage_pct": leakage,
+        "leakage_tco2e": leakage_er,
+        "uncertainty_pct": uncertainty,
+        "uncertainty_tco2e": uncertainty_er,
+        "buffer_pct": buffer,
+        "buffer_tco2e": buffer_er,
+        "net_tco2e": net_er,               # headline
+    }
+    results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
+    view_results = {'applicable': True, 'narrative': narrative, **values}
+    return results, view_results
 
 
 def net_carbon_removal(gross_removal: float, leakage: float, uncertainty: float,
-                       buffer: float) -> ComponentResult:
+                       buffer: float) -> tuple[dict, dict]:
     """Component 5.5. Deductions applied to 5.3's gross carbon removal (`total_tco2e`)."""
     leakage_removal, uncertainty_removal, buffer_removal, net_removal = _deductions(
         gross_removal, leakage, uncertainty, buffer)
-    return ComponentResult(
-        component="5.5 Net carbon sequestration",
-        applicable=True,
-        narrative=(
-            f"Net carbon sequestration is estimated at {net_removal:,.2f} tCO2e "
-            f"after applying deductions to the total estimated carbon sequestration "
-            f"of {gross_removal:,.2f} tCO2e."
-        ),
-        values={
-            "gross_tco2e": gross_removal,
-            "leakage_pct": leakage,
-            "leakage_tco2e": leakage_removal,
-            "uncertainty_pct": uncertainty,
-            "uncertainty_tco2e": uncertainty_removal,
-            "buffer_pct": buffer,
-            "buffer_tco2e": buffer_removal,
-            "net_tco2e": net_removal,          # headline
-        },
+    narrative = (
+        f"Net carbon sequestration is estimated at {net_removal:,.2f} tCO2e "
+        f"after applying deductions to the total estimated carbon sequestration "
+        f"of {gross_removal:,.2f} tCO2e."
     )
+    values = {
+        "gross_tco2e": gross_removal,
+        "leakage_pct": leakage,
+        "leakage_tco2e": leakage_removal,
+        "uncertainty_pct": uncertainty,
+        "uncertainty_tco2e": uncertainty_removal,
+        "buffer_pct": buffer,
+        "buffer_tco2e": buffer_removal,
+        "net_tco2e": net_removal,          # headline
+    }
+    results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
+    view_results = {'applicable': True, 'narrative': narrative, **values}
+    return results, view_results
