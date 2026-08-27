@@ -38,8 +38,8 @@ class CloudRecaptcha():
         response = self.recaptcha_client.create_assessment(request)
 
         if not response.token_properties.valid:
-            raise AppMessageException('recaptcha verification failed: invalid token')
+            raise AppMessageException('recaptcha verification failed.')
         if response.token_properties.action != action:
-            raise AppMessageException('recaptcha verification failed: action mismatch')
+            raise AppMessageException('recaptcha verification failed..')
         if response.risk_analysis.score < float(settings.get('RECAPTCHA_SCORE_THRESHOLD', 0.8)):
-            raise AppMessageException('recaptcha verification failed: low score')
+            raise AppMessageException('recaptcha verification failed...')
