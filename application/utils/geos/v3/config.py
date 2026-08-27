@@ -811,7 +811,7 @@ SOCIAL_INDICATORS = {
         "employment": {
             "unemployment_rate_percentage": _ind("unemployment_rate", 0, subgroup="Total"),
             "employment_rate_percentage": _ind("employment_rate", 0, subgroup="Total"),
-            "employment_sectors": _ind("employment_by_sector", 1, "shares", subgroup="Total"),
+            "employment_sectors": _ind("employment_by_sector", 0, "shares", subgroup="Total"),
             "industries_occupations": _ind("top3_industries", 0, "shares", subgroup="Total"),
         },
         "education": {
