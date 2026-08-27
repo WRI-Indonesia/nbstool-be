@@ -36,6 +36,11 @@ class Config:
 
     GCS_MOUNT_PATH = os.environ.get('GCS_MOUNT_PATH')
 
+    # moved to tbl_master_settings
+    # RECAPTCHA_PROJECT_ID = os.environ.get('RECAPTCHA_PROJECT_ID')
+    # RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY')
+    # RECAPTCHA_SCORE_THRESHOLD = float(os.environ.get('RECAPTCHA_SCORE_THRESHOLD', 0.8))
+
     GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME')
 
     # INCUBATOR_EMAIL_LIST = os.environ.get('INCUBATOR_EMAIL_LIST')

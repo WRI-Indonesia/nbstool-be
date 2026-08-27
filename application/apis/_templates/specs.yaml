@@ -228,6 +228,10 @@ paths:
                   description: stored title-cased in the user's extended data
                   examples:
                     - Indonesia
+                recaptcha_token:
+                  type: string
+                  description: reCAPTCHA token from the client for the "signup"
+                    action; 400 when missing or verification fails
         required: true
 
   /users/account/verification/resend:
@@ -398,6 +402,10 @@ paths:
                   type: string
                   examples:
                     - secret123
+                recaptcha_token:
+                  type: string
+                  description: reCAPTCHA token from the client for the "login"
+                    action; 400 when missing or verification fails
         required: true
 
   /users/account/forgot-password:
@@ -444,6 +452,11 @@ paths:
                   type: string
                   examples:
                     - user@mail.com
+                recaptcha_token:
+                  type: string
+                  description: reCAPTCHA token from the client for the
+                    "forgot_password" action; 400 when missing or verification
+                    fails
         required: true
 
   /users/account/reset-password:
@@ -494,6 +507,11 @@ paths:
                   type: string
                   examples:
                     - newSecret123
+                recaptcha_token:
+                  type: string
+                  description: reCAPTCHA token from the client for the
+                    "password_reset" action; 400 when missing or verification
+                    fails
         required: true
 
   /users/account/change-password:

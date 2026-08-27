@@ -30,10 +30,12 @@ from ...utils.common import app_exception_handler, success_handler
 from ...utils.common import allowed_image_file, sanitize_for_jsonb
 from ...utils.common.mail import BaseMail, EMailUserRegister, EMailUserForgotPassword, EMailReviewUserRequest
 from ...utils.cloud_storage import CloudStorage
+from ...utils.cloud_recaptcha import CloudRecaptcha
 
 from .utils import UserLogic
 
 gcs = CloudStorage()
+recaptcha = CloudRecaptcha()
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -262,6 +264,8 @@ def user_account_register():
         # except:
         #     raise AppMessageException('invalid input format: permissionPolicy')
         
+        recaptcha.verify(data.get('recaptcha_token'), 'signup')
+
         known_organization_type = Organization.query.filter_by(id=organization_type_id).first()
         if not known_organization_type:
             raise AppMessageException('invalid input: organization type not found')
@@ -480,7 +484,9 @@ def user_account_login():
             raise AppMessageException('invalid input format: email')
         if not password:
             raise AppMessageException('please input: password (text mandatory)')
-        
+
+        recaptcha.verify(data.get('recaptcha_token'), 'login')
+
         known_user = User.query.filter_by(email=email).first()
         if not known_user or not known_user.check_password(password):
             raise AppMessageException('email or password does not match')
@@ -519,7 +525,9 @@ def user_account_forgot_password():
             raise AppMessageException('please input: email (text mandatory)')
         if not re.match(r'[^@]+@[^@]+\.[^@]+', email):
             raise AppMessageException('invalid input format: email')
-        
+
+        recaptcha.verify(data.get('recaptcha_token'), 'forgot_password')
+
         known_user = User.query.filter_by(email=email).first()
         if not known_user:
             raise AppMessageException('email not found')
@@ -572,6 +580,8 @@ def user_account_reset_password():
 
         if not password:
             raise AppMessageException('please input: password (text mandatory)')
+
+        recaptcha.verify(data.get('recaptcha_token'), 'password_reset')
 
         current_user.password = password
         current_user.encode_password()

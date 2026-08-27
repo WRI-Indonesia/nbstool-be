@@ -68,6 +68,7 @@ google-api-python-client==2.143.0
 google-auth==2.34.0
 google-auth-httplib2==0.2.0
 google-cloud-core==2.4.1
+google-cloud-recaptcha-enterprise==1.21.2
 google-cloud-storage==2.18.2
 google-crc32c==1.5.0
 google-resumable-media==2.7.2
