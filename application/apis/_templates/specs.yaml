@@ -1640,7 +1640,7 @@ paths:
                       tenure: null
         required: true
 
-  /projects/:
+  /projects:
     get:
       tags:
         - Project module

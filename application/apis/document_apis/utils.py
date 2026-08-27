@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import json
-
 from sqlalchemy.dialects.postgresql import JSONB
 
 from ... import db
@@ -21,18 +19,21 @@ from ...utils.document_generator.v3.prefill import feasibility_prefill, merge_fo
 
 
 def _stored_dict(value):
-    """A stored jsonb value, as the dict it is supposed to be. A frontend that once POSTed a
-    STRINGIFIED form got it jsonb-`||`-wrapped into an array (object || string concatenates);
-    such a row must read as empty rather than crash every draft reader."""
+    """A stored jsonb value, as the dict it is supposed to be. Rows corrupted into arrays by
+    the old double-serialising jsonb_merge (object || string wraps into an array) must read
+    as empty rather than crash every draft reader."""
     return value if isinstance(value, dict) else {}
 
 
 def jsonb_merge(column, patch: dict):
     """`coalesce(column, '{}') || patch` -- an atomic per-key merge evaluated by Postgres, so
     two concurrent saves cannot lose each other's fields the way a read-modify-write of the
-    whole dict would."""
-    return db.func.coalesce(column, db.cast('{}', JSONB)).op('||')(
-        db.cast(json.dumps(patch), JSONB))
+    whole dict would.
+
+    The patch binds as a plain value: the JSONB bind processor serialises it exactly once.
+    Passing `json.dumps(patch)` here would serialise TWICE, the parameter arrives as a jsonb
+    STRING, and `object || string` silently wraps the whole column into an ARRAY."""
+    return db.func.coalesce(column, db.cast({}, JSONB)).op('||')(db.cast(patch, JSONB))
 
 
 def load_draft(session_id: str, cert_type: str, base_types: tuple = ()):
