@@ -251,6 +251,69 @@ def projects_bind_project():
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
+# ---------------------------------------------------------------------------------------------
+# v3 project readers. The dashboard (F04) and detail (F04.1)
+# screens read the v3 JSONB shapes; the old readers went through the v2 pickle columns and
+# crash on a v3 row. UI data with no backend source yet -- collaborators, monitoring entries,
+# privacy level, history/audit log -- is simply absent from the payload until its feature
+# exists; the frontend skips what is not there.
+# ---------------------------------------------------------------------------------------------
+
+_ECO_SELECTION_KEYS = {'forest': 'Forest', 'mangrove': 'Mangrove', 'peatland': 'Peatland'}
+_PATHWAY_ORDER = ('Protect', 'Manage', 'Restore')
+
+
+def _project_ecosystems(analyzer):
+    """`[{name, key, pathways}]` for the dashboard cards and the Ecosystem filter.
+
+    The user's pathway-screen selections (persisted with the benefit run) are what the project
+    chose, so they win; before a benefit run, the eligibility cards stand in (any intervention
+    with area on the site)."""
+    benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
+    selections = (benefit.get('assumptions') or {}).get('selections') or {}
+    items = []
+    for key, name in _ECO_SELECTION_KEYS.items():
+        chosen = selections.get(key) or {}
+        pathways = [pw for pw in _PATHWAY_ORDER if chosen.get(pw.lower())]
+        if pathways:
+            items.append({'name': name, 'key': key, 'pathways': pathways})
+    if items:
+        return items
+    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+    for card in pathway.get('ecosystems') or []:
+        eligible = {i.get('intervention') for i in card.get('interventions') or []
+                    if (i.get('area_ha') or 0) > 0}
+        pathways = [pw for pw in _PATHWAY_ORDER if pw in eligible]
+        if pathways:
+            label = card.get('label') or ''
+            items.append({'name': label, 'key': label.lower(), 'pathways': pathways})
+    return items
+
+
+def _project_area_ha(analyzer, session_id):
+    """Total site area: the pathway run's figure, else the polygon's own size."""
+    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+    area = pathway.get('project_area_ha')
+    if area is not None:
+        return area
+    polygon = Polygons.query.filter_by(session_id=session_id).first()
+    return polygon.project_area_size if polygon else None
+
+
+def _monitoring_status(session_id):
+    """The dashboard's Monitoring Status filter values: a saved F05 plan makes the project
+    'Monitoring Active', anything earlier is 'Waiting for Monitoring Plan'. MRV entry counts
+    would refine this later; F06 has no backend yet."""
+    doc = DocumentData.find_by_session_id_and_type(session_id, 'MonitoringV3')
+    if doc and (doc.form or {}).get('mpPlan'):
+        return 'Monitoring Active'
+    return 'Waiting for Monitoring Plan'
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
 # legacy: /nbsapi/project-management/project-list [POST]
 @project_apis_blueprint.route('/list', methods=['GET'])
 @cross_origin()
@@ -260,31 +323,76 @@ def projects_list():
     try:
         if not current_user.is_authenticated:
             return make_response(jsonify(app_exception_handler('not logged in', 401)), 401)
-        
+
         known_organization = Organization.find_by_id(id=current_user.organization_type_id)
         if not known_organization:
             known_organization = Organization()
 
-        known_project_list = UserSessions.query.filter_by(user_id=current_user.id, is_active=1, is_project=True).order_by(db.desc(UserSessions.created_at))
+        projects = UserSessions.query.filter_by(user_id=current_user.id, is_active=1, is_project=True, analyzer_version='v3').order_by(db.desc(UserSessions.created_at)).all()
+        ids = [p.session_id for p in projects]
 
+        # FOUR round-trips total, whatever the project count -- analyzers, document counts,
+        # monitoring-plan existence and polygon areas each come back in one batched query and
+        # join in Python by session_id. (The first cut queried all three per project in the
+        # loop; the tables have no FK relationships to join through, so batched IN() lookups
+        # are the join here.)
+        analyzers: dict = {}
+        doc_counts: dict = {}
+        monitored: set = set()
+        polygon_areas: dict = {}
+        if ids:
+            for analyzer in DataAnalyzer.query.filter(DataAnalyzer.session_id.in_(ids)):
+                analyzers.setdefault(analyzer.session_id, analyzer)
+            doc_counts = dict(
+                db.session.query(DocumentList.project_id, db.func.count(DocumentList.id))
+                .filter(DocumentList.project_id.in_(ids), DocumentList.is_active == 1)
+                .group_by(DocumentList.project_id).all())
+            monitored = {sid for (sid,) in db.session.query(DocumentData.session_id)
+                         .filter(DocumentData.session_id.in_(ids),
+                                 DocumentData.certification_type == 'MonitoringV3',
+                                 DocumentData.form['mpPlan'].astext.isnot(None))}
+            for sid, area in (db.session.query(Polygons.session_id, Polygons.project_area_size)
+                              .filter(Polygons.session_id.in_(ids))):
+                polygon_areas.setdefault(sid, area)
+
+        # One row per project with every field the dashboard's toolbar works on -- status /
+        # ecosystem / country filters, name+location search, last-updated and area sorts --
+        # so the client filters and sorts locally exactly like the mock does.
         items = []
-        for project in known_project_list:
-            known_data_analyzer = DataAnalyzer.query.filter_by(session_id=project.session_id).first()
+        for project in projects:
+            analyzer = analyzers.get(project.session_id)
+            site = (analyzer.site_information_json if analyzer else None) or {}
+            pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+            area = pathway.get('project_area_ha')
+            if area is None:
+                area = polygon_areas.get(project.session_id)
 
             items.append({
                 'project_id': project.session_id,
                 'project_name': project.project_name,
-                'aoi_country': known_data_analyzer.site_information.get('administrative_boundaries').get('country'),
-                'aoi_province': known_data_analyzer.site_information.get('administrative_boundaries').get('province'),
-                'aoi_area': known_data_analyzer.site_information.get('administrative_boundaries').get('project_area'),
+                'project_description': project.project_description,
+                'country': site.get('country'),
+                'province': site.get('province'),
+                'area_ha': area,
+                'ecosystems': _project_ecosystems(analyzer),
+                'monitoring_status': ('Monitoring Active' if project.session_id in monitored
+                                      else 'Waiting for Monitoring Plan'),
+                'documents': doc_counts.get(project.session_id, 0),
+                'created_at': _iso(project.created_at),
+                'updated_at': _iso(project.updated_at or project.created_at),
             })
-        
+
         results = {
             'user': {
                 'user_fullname': current_user.name,
                 'user_email': current_user.email,
                 'user_org_type': known_organization.name,
                 'user_org_name': current_user.organization_name,
+            },
+            # The profile-summary stats. Monitoring entries belong here too once F06 exists.
+            'stats': {
+                'total_projects': len(items),
+                'area_covered_ha': sum(i['area_ha'] or 0 for i in items),
             },
             'projects': items
         }
@@ -318,18 +426,80 @@ def projects_details():
         geom = json.loads(geom[0])
 
         known_project = UserSessions.find_by_session_id(session_id)
-        known_data_analyzer = DataAnalyzer.find_by_session_id(session_id)
-        known_map_explorer = MapExplorer.find_by_session_id(session_id)
+        if not known_project:
+            raise AppMessageException('fail, project Not found')
+        analyzer = DataAnalyzer.find_by_session_id(session_id)
+        site = (analyzer.site_information_json if analyzer else None) or {}
+        benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
+        assumptions = benefit.get('assumptions') or {}
+        selections = assumptions.get('selections') or {}
 
+        # NbS Intervention block: chosen activity count from the pathway-screen selections;
+        # duration from the benefit run's assumptions. Both null until benefit has run.
+        activities_selected = sum(
+            len((selections.get(key) or {}).get('activities') or [])
+            for key in _ECO_SELECTION_KEYS) or None
+
+        # Monitoring-plan card: counts out of the saved F05 plan. Entries logged and
+        # monitoring frequency summaries wait for F06.
+        monitoring_plan = None
+        mp_doc = DocumentData.find_by_session_id_and_type(session_id, 'MonitoringV3')
+        mp_plan = ((mp_doc.form if mp_doc else None) or {}).get('mpPlan')
+        if mp_plan:
+            activities = [a for eco in mp_plan.get('ecos') or []
+                          for a in eco.get('activities') or []]
+            monitoring_plan = {
+                'activities': len(activities),
+                'indicators': sum(len(g.get('items') or [])
+                                  for a in activities for g in a.get('groups') or []),
+            }
+
+        documents = [
+            {
+                'document_id': d.document_id,
+                'document_type': d.document_type,
+                'document_status': d.document_status,
+                'document_name': d.client_name,
+                'created_at': _iso(d.created_at),
+            }
+            for d in DocumentList.find_by_project_id(session_id) or []
+        ]
+
+        # No backend data yet, so no field: collaborators, privacy level, history/audit log,
+        # MRV entries.
         results = {
             'polygon': geom,
+            'project_id': session_id,
             'project_name': known_project.project_name,
-            'project_area': known_data_analyzer.site_information.get('administrative_boundaries').get('project_area'),
-            'area_of_interest': '{}, {}'.format(known_data_analyzer.site_information.get('administrative_boundaries').get('project_area'), known_data_analyzer.site_information.get('administrative_boundaries').get('country').title()),
-            'project_duration': known_map_explorer.project_duration,
-            'intervention_type': known_map_explorer.intervention,
-            'estimated_unplanned_deforestation': known_map_explorer.estimated_unplanned_deforestation,
-            'restoration_target': known_map_explorer.rest_target,
+            'project_description': known_project.project_description,
+            'country': site.get('country'),
+            'province': site.get('province'),
+            'district': site.get('district'),
+            'area_ha': _project_area_ha(analyzer, session_id),
+            'monitoring_status': _monitoring_status(session_id),
+            'ecosystems': _project_ecosystems(analyzer),
+            'intervention': {
+                'duration_years': assumptions.get('duration_years'),
+                'activities_selected': activities_selected,
+            },
+            'documents': documents,
+            'monitoring_plan': monitoring_plan,
+            'created_at': _iso(known_project.created_at),
+            'updated_at': _iso(known_project.updated_at or known_project.created_at),
+            # The Analysis tab's data, from the analyzer row this response already loaded --
+            # each section exactly as its stream emitted it (sitechar columns flat, threat
+            # nested per tab, pathway one document, benefit nested per process; null = never
+            # ran). No separate endpoint: the old /geos/feature/data-analyzer getter was
+            # removed in favour of this.
+            'analysis': {
+                'site_information': analyzer.site_information_json if analyzer else None,
+                'nature': analyzer.nature_json if analyzer else None,
+                'climate': analyzer.climate_json if analyzer else None,
+                'people': analyzer.people_json if analyzer else None,
+                'threat': analyzer.threat_json if analyzer else None,
+                'pathway': analyzer.intervention_eligibility_json if analyzer else None,
+                'benefit': analyzer.benefit_json if analyzer else None,
+            },
         }
 
         return make_response(jsonify(success_handler({ 'result': results }, status_code=200)), 200)

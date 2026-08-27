@@ -5,7 +5,12 @@ Reports the natural disaster risks the AOI is exposed to, one card per risk, eac
 representative level.
 
 Data. Five pre-classified risk rasters, `risk_*.tif`: cyclone, drought, fire, flood, landslide.
-Values are 1..4 (Very Low / Low / Moderate / High) with 0 as nodata.
+Values are 1..4 (Very Low / Low / Moderate / High) with 0 as nodata. TEAM RULING 2026-08-27:
+0 (and absence of coverage) READS AS "NO RISK" -- a definitive answer, not missing data -- so an
+uncovered risk emits a clean "No risk" card and nothing goes through the error channel. The
+tabulation itself still excludes 0 exactly as the notebook does; only the interpretation of
+absence changed. The same ruling dropped flashflood for good: no raster exists and none is
+coming.
 
 Risk, not hazard, and the distinction is the layer's rather than ours. These files fold exposure
 and vulnerability in upstream, so what 1.7 reports is risk. The component takes them as given and
@@ -47,7 +52,6 @@ try:
         AOI,
         ClassShare,
         load_raster_clipped,
-        oxford_join,
         tabulate_classes,
     )
     from ...config import (
@@ -66,7 +70,6 @@ except ImportError:  # `python natural_disaster_risk.py`: no package around it
         AOI,
         ClassShare,
         load_raster_clipped,
-        oxford_join,
         tabulate_classes,
     )
     from config import (
@@ -83,10 +86,9 @@ except ImportError:  # `python natural_disaster_risk.py`: no package around it
 #
 # FIVE fields, one per layer in RISK_RASTERS. The written contract lists only four (flood,
 # landslide, typhoon, drought), but `fire_risk_dict` is kept on the team's instruction: the
-# contract is behind the frontend, not the other way round. `flashflood` is the one still absent,
-# and only because no v3 raster exists for it -- add the layer to RISK_RASTERS and a line here and
-# it works. 1.7 analyses every layer in RISK_RASTERS regardless of this dict, and
-# `results['tables']['risk_cards']` always carries them all.
+# contract is behind the frontend, not the other way round. Flashflood is OUT by team decision
+# (2026-08-27) -- no raster exists and none is planned. 1.7 analyses every layer in RISK_RASTERS
+# regardless of this dict, and `results['tables']['risk_cards']` always carries them all.
 FE_RISK_FIELDS = {
     "flood": "flood_risk_dict",
     "landslide": "landslide_risk_dict",
@@ -141,34 +143,21 @@ def analyze_natural_risk(aoi: AOI) -> tuple[dict, dict]:
     if present:
         narrative = "The selected area is susceptible to several natural disaster risks, including:"
     else:
-        narrative = "The selected area has no natural disaster risk data for this location."
+        narrative = "The selected area is not exposed to any natural disaster risk."
 
     # The notebook also keeps the clipped arrays for map display (`rasters=`). This port drops
     # them, as 1.4 and 1.8 already do: the endpoint streams numbers, and five clipped arrays held
     # alive per request is real memory for nothing.
     leveled = {c.risk: c for c in cards if c.level_code}
 
-    flags: list[str] = []
-    # ABSENCE, not degradation: the layer has no value here and never will for this AOI, so this
-    # is `missing` and the card reports `failed` -- "this is the answer". See
-    # pipeline.error_status.
-    missing: list[str] = []
-    no_data = [risk for risk in FE_RISK_FIELDS if risk not in leveled]
-    if no_data:
-        # 0 is the nodata value in these files, so a risk that is simply absent here and a layer
-        # that does not reach the AOI look the same. Worth naming rather than rendering "No data"
-        # with no explanation.
-        missing.append(
-            f"1.7: no risk value covers the AOI for {oxford_join(no_data)}. In these rasters 0 "
-            "is nodata, so 'not exposed' and 'not mapped' cannot be told apart."
-        )
-
+    # Team ruling 2026-08-27: 0 / no coverage = NO RISK, a definitive answer. A risk absent from
+    # `leveled` renders as a clean "No risk" card below; nothing goes through `missing`, so 1.7
+    # never reports an error state for absence any more.
     results = {
         'narrative': narrative,
         'tables': {'risk_cards': present},
         'values': {c.risk: c.level_code for c in present},
-        'flags': flags,
-        'missing': missing,
+        'flags': [],
     }
 
     view_results = {

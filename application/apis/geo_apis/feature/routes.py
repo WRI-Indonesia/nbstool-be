@@ -28,7 +28,7 @@ from ....utils.geos import GeoUtils
 # from ....utils.geos.current_condition import process_input_data_analyzer_result
 # from ....utils.geos.benefit import run_benefit
 from ....utils.geos.v3.common import prepare_aoi_from_session, to_jsonable
-from ....utils.geos.v3.benefit.run_benefit import stream_benefit
+from ....utils.geos.v3.benefit.run_benefit import PEOPLE_BENEFIT_KEYS, stream_benefit
 from ....utils.geos.v3.benefit.run_benefit import validate as benefit_validate
 from ....utils.geos.v3.pathway.run_pathway import run_pathway
 from ....utils.geos.v3.run_analysis import COMPONENTS as ANALYSIS_COMPONENTS
@@ -550,8 +550,7 @@ def geo_feature_benefit_v3():
         if selections is not None and not isinstance(selections, dict):
             raise AppMessageException('fail, selections must be an object keyed by ecosystem')
         # People-tab benefit statements, user-specified on the benefit screen. Stored verbatim
-        # on the assumptions line; saving after the fact is a re-POST with process:
-        # ["assumptions"] and this dict -- no analysis re-runs.
+        # on the assumptions line; card-by-card saves go through /feature/benefit/people.
         people_benefits = payload.get('people_benefits')
         if people_benefits is not None and not isinstance(people_benefits, dict):
             raise AppMessageException('fail, people_benefits must be an object keyed by card')
@@ -580,6 +579,12 @@ def geo_feature_benefit_v3():
         site = (analyzer.site_information_json if analyzer else None) or {}
         rate_pct = site.get('historical_deforestation_percentage')
 
+        # A re-run without people_benefits in the body must not wipe saved card answers with
+        # the assumption line's null seeds -- carry the stored ones forward.
+        if people_benefits is None:
+            people_benefits = ((((analyzer.benefit_json if analyzer else None) or {})
+                                .get('assumptions') or {}).get('people_benefits'))
+
         aoi = prepare_aoi_from_session(session_id)
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
@@ -598,6 +603,58 @@ def geo_feature_benefit_v3():
         stream_with_context(lines),
         mimetype='application/x-ndjson',
     )
+
+
+# The People tab's six "Tap to specify this benefit" cards, saved card by card without
+# re-running any analysis. The benefit stream seeds the six slots (null) on its `assumptions`
+# line; this endpoint updates only the cards named in the body -- a `null` value resets one
+# (the card's Reset button) -- and returns the full six-slot dict, which is also what lands in
+# the persisted `benefit_json.assumptions.people_benefits`.
+@geo_apis_blueprint.route('/feature/benefit/people', methods=['POST'])
+@cross_origin()
+def geo_feature_benefit_people():
+    g_var.__api_name__ = 'geo_feature_benefit_people'
+
+    try:
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+        payload = request.get_json()
+
+        session_id = payload.get('session_id')
+        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
+        if not known_polygons:
+            raise AppMessageException('fail, session id Not found')
+
+        patch = payload.get('people_benefits')
+        if not isinstance(patch, dict) or not patch:
+            raise AppMessageException(
+                'fail, people_benefits must be a non-empty object keyed by card')
+        unknown = [key for key in patch if key not in PEOPLE_BENEFIT_KEYS]
+        if unknown:
+            raise AppMessageException(
+                f"fail, unknown card: {', '.join(unknown)} "
+                f"(cards: {', '.join(PEOPLE_BENEFIT_KEYS)})")
+        bad = [key for key, value in patch.items()
+               if value is not None and not isinstance(value, dict)]
+        if bad:
+            raise AppMessageException(
+                f"fail, a card is an object (statement, answer) or null: {', '.join(bad)}")
+
+        analyzer = DataAnalyzer.find_by_session_id(session_id)
+        stored = ((((analyzer.benefit_json if analyzer else None) or {})
+                   .get('assumptions') or {}).get('people_benefits')) or {}
+        slots = {key: patch.get(key, stored.get(key)) for key in PEOPLE_BENEFIT_KEYS}
+
+        # save_v3_sections merges one level per column, so this replaces `people_benefits`
+        # wholesale (already the merged six slots) while `assumptions`' siblings -- duration,
+        # carbon_risk, selections -- stay untouched.
+        save_v3_sections(session_id, {'benefit_json': {'assumptions': {'people_benefits': slots}}})
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+    return make_response(jsonify(success_handler({'people_benefits': slots})), 200)
 
 
 # off: v2 intervention eligibility, read the v2 current-condition data.
@@ -621,46 +678,49 @@ def geo_feature_benefit_v3():
 #         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
+# off: GET /feature/data-analyzer (the stored-results getter). The project detail (/projects)
+# now carries the same sections under `analysis`, from the analyzer row it already loads --
+# one request serves the whole F04.1 screen. Re-enable this if a pre-bind session ever needs
+# its stored results back (mid-flow page reload without re-streaming).
 # legacy: /nbsapi/feature/data-analyzer-result [POST]
-@geo_apis_blueprint.route('/feature/data-analyzer', methods=['GET'])
-@cross_origin()
-def geo_feature_data_analyzer_result():
-    g_var.__api_name__ = 'geo_feature_data_analyzer_result'
-
-    try:
-        data = request.args
-
-        session_id = data.get('session_id')
-
-        known_data_analyzer = DataAnalyzer.query.filter_by(session_id=session_id).first()
-        if not known_data_analyzer:
-            raise AppMessageException('fail, session id Not found')
-        
-        geom = Polygons.get_geometry(session_id).first()
-        geom = json.loads(geom[0])['coordinates'][0]
-
-        known_polygons = Polygons.query.filter_by(session_id=session_id).first()
-        if not known_polygons:
-            raise AppMessageException('fail, session id Not found')
-
-        known_polygons.assert_area_size()
-
-        results = {
-            'session_id': session_id,
-            'polygon': geom,
-            'site_information': known_data_analyzer.site_information,
-            'nature': known_data_analyzer.nature,
-            'climate': known_data_analyzer.climate,
-            'people': known_data_analyzer.people,
-            'benefit': known_data_analyzer.benefit,
-            'eligibility': known_data_analyzer.intervention_eligibility,
-        }
-
-        return make_response(jsonify(success_handler({ 'result': results })), 200)
-    except AppMessageException as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
-    except Exception as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+# @geo_apis_blueprint.route('/feature/data-analyzer', methods=['GET'])
+# @cross_origin()
+# def geo_feature_data_analyzer_result():
+#     g_var.__api_name__ = 'geo_feature_data_analyzer_result'
+#
+#     try:
+#         data = request.args
+#
+#         session_id = data.get('session_id')
+#
+#         known_data_analyzer = DataAnalyzer.query.filter_by(session_id=session_id).first()
+#         if not known_data_analyzer:
+#             raise AppMessageException('fail, session id Not found')
+#
+#         geom = Polygons.get_geometry(session_id).first()
+#         geom = json.loads(geom[0])['coordinates'][0]
+#
+#         # The stored v3 sections, exactly as the streams emitted them (persist merges each
+#         # line's `data` per section): the four sitechar columns flat, threat nested per tab,
+#         # pathway as one document, benefit nested per process. A section the session never
+#         # ran is null.
+#         results = {
+#             'session_id': session_id,
+#             'polygon': geom,
+#             'site_information': known_data_analyzer.site_information_json,
+#             'nature': known_data_analyzer.nature_json,
+#             'climate': known_data_analyzer.climate_json,
+#             'people': known_data_analyzer.people_json,
+#             'threat': known_data_analyzer.threat_json,
+#             'pathway': known_data_analyzer.intervention_eligibility_json,
+#             'benefit': known_data_analyzer.benefit_json,
+#         }
+#
+#         return make_response(jsonify(success_handler({ 'result': results })), 200)
+#     except AppMessageException as e:
+#         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+#     except Exception as e:
+#         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
 

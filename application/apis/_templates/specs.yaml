@@ -1536,10 +1536,10 @@ paths:
                     answer}` (answer is an array for the livelihood
                     multi-select); the `assumptions` line always echoes all
                     six keys, null where unspecified, and persists them.
-                    User-answered, not computed -- to save answers after the
-                    run, re-POST with `process: ["assumptions"]` and this
-                    dict: only that line re-runs and the persisted merge
-                    keeps every other card.
+                    User-answered, not computed. Usually OMITTED here: a
+                    run without it carries the stored answers forward, and
+                    card-by-card saves go through POST
+                    /geos/feature/benefit/people.
                   examples:
                     - food_water:
                         statement: Enhance food and water security
@@ -1550,62 +1550,77 @@ paths:
                         answer: ["NTFP"]
         required: true
 
-  /geos/feature/data-analyzer:
-    get:
+  /geos/feature/benefit/people:
+    post:
       tags:
         - Geo module
-      summary: get data analyzer
+      summary: save People-tab benefit statements
       responses:
         "200":
           content:
             application/json:
               schema:
                 type: object
-                title: GetDataAnalyzerOk
+                title: BenefitPeopleOk
                 required:
                   - result
                 properties:
                   result:
                     type: object
                     required:
-                      - session_id
-                      - polygon
-                      - site_information
-                      - nature
-                      - climate
-                      - people
-                      - benefit
-                      - eligibility
+                      - people_benefits
                     properties:
-                      session_id:
-                        type: string
-                        examples:
-                          - b06e52c5-694d-4890-9a0e-ae9e4a581da5
-                      polygon:
-                        $ref: "#/components/schemas/Geometry"
-                      site_information:
+                      people_benefits:
                         type: object
-                      nature:
-                        type: object
-                      climate:
-                        type: object
-                      people:
-                        type: object
-                      benefit:
-                        type: object
-                      eligibility:
-                        type: array
-                        items:
-                          type: string
-          description: Success
+                        description: all six card slots after the update,
+                          null where unspecified
+          description: >-
+            The full six-slot dict after the update -- exactly what now sits
+            in the persisted `benefit_json.assumptions.people_benefits`.
         "400":
           $ref: "#/components/responses/Bad Request"
         "500":
           $ref: "#/components/responses/Internal Server Error"
-      parameters:
-        - $ref: "#/components/parameters/session_id"
-      description: get comprehensive data analysis results across all sections for a session
-      operationId: getDataAnalyzer
+      parameters: []
+      description: >-
+        Saves the People tab's "Tap to specify this benefit" answers card by
+        card, no analysis re-run. Only the cards named in the body change; a
+        card set to `null` is reset (the card's Reset button). The benefit
+        stream's `assumptions` line seeds the six slots and a later benefit
+        re-run reads the saved answers back, so saving here and re-running
+        the analysis never fight. Works before the first benefit run too --
+        the answers wait in the same place for it.
+
+        Cards: food_water, livelihood, social, equity, tenure, cultural. A
+        filled card is `{statement, answer}` -- the statement text and the
+        chosen option, an array for the livelihood multi-select. Prompts,
+        options and statement wording are owned by the frontend; the backend
+        stores what was specified verbatim. An unknown card key is a 400.
+      operationId: postBenefitPeople
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - people_benefits
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
+                people_benefits:
+                  type: object
+                  description: only the cards to update, keyed by card name;
+                    each value an object `{statement, answer}` or null to
+                    reset that card
+                  examples:
+                    - food_water:
+                        statement: Enhance food and water security
+                        answer: "No"
+                      tenure: null
+        required: true
 
   /projects/:
     get:
@@ -1863,10 +1878,20 @@ paths:
                     type: object
                     required:
                       - user
+                      - stats
                       - projects
                     properties:
                       user:
                         $ref: "#/components/schemas/User"
+                      stats:
+                        type: object
+                        description: the profile-summary numbers (monitoring
+                          entries join once F06 exists)
+                        properties:
+                          total_projects:
+                            type: integer
+                          area_covered_ha:
+                            type: number
                       projects:
                         type: array
                         items:
@@ -1877,7 +1902,11 @@ paths:
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
-      description: list all active projects for the authenticated user
+      description: >-
+        list all active v3 projects for the authenticated user, one row per
+        project with every field the F04 dashboard toolbar filters and sorts
+        on (Monitoring Status / Ecosystem / Country, search, last-updated
+        and area sorts) -- filtering happens client-side over this list.
       operationId: listProjects
 
   /projects/documents:
@@ -3081,14 +3110,41 @@ components:
           examples:
             - 30m
       description: a single map layer
+    ProjectEcosystem:
+      type: object
+      required:
+        - name
+        - key
+        - pathways
+      properties:
+        name:
+          type: string
+          examples:
+            - Mangrove
+        key:
+          type: string
+          enum: [forest, mangrove, peatland]
+        pathways:
+          type: array
+          items:
+            type: string
+            enum: [Protect, Manage, Restore]
+      description: one ecosystem on the project with its pathways -- the
+        user's pathway-screen selections when a benefit run persisted them,
+        else the eligible interventions (area > 0)
     ProjectSummary:
       type: object
       required:
         - project_id
         - project_name
-        - aoi_country
-        - aoi_province
-        - aoi_area
+        - country
+        - province
+        - area_ha
+        - ecosystems
+        - monitoring_status
+        - documents
+        - created_at
+        - updated_at
       properties:
         project_id:
           type: string
@@ -3098,62 +3154,157 @@ components:
           type: string
           examples:
             - My NBS Project
-        aoi_country:
-          type: string
+        project_description:
+          type: [string, "null"]
+        country:
+          type: [string, "null"]
           examples:
             - Indonesia
-        aoi_province:
+        province:
+          type: [string, "null"]
+          examples:
+            - Kalimantan Barat
+        area_ha:
+          type: [number, "null"]
+          examples:
+            - 67439.2
+        ecosystems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectEcosystem"
+        monitoring_status:
           type: string
-          examples:
-            - Kalimantan Tengah
-        aoi_area:
-          type: number
-          examples:
-            - 22.55
-      description: project list item
+          enum: [Monitoring Active, Waiting for Monitoring Plan]
+          description: '"Monitoring Active" once an F05 plan is saved'
+        documents:
+          type: integer
+          description: number of generated documents
+        created_at:
+          type: [string, "null"]
+        updated_at:
+          type: [string, "null"]
+          description: ISO timestamp, drives the Last-updated column and sort
+      description: >-
+        one dashboard row/card. Carries every field the F04 toolbar works on
+        -- Monitoring Status / Ecosystem / Country filters, name+location
+        search, last-updated and area sorts -- so the client filters and
+        sorts locally. Not served yet (no backend data): collaborators,
+        monitoring entry counts.
     ProjectDetails:
       type: object
       required:
         - polygon
+        - project_id
         - project_name
-        - project_area
-        - area_of_interest
-        - project_duration
-        - intervention_type
-        - estimated_unplanned_deforestation
-        - restoration_target
+        - monitoring_status
+        - ecosystems
+        - intervention
+        - documents
       properties:
         polygon:
           $ref: "#/components/schemas/Geometry"
+        project_id:
+          type: string
         project_name:
           type: string
           examples:
             - My NBS Project
-        project_area:
-          type: number
-          examples:
-            - 22.55
-        area_of_interest:
+        project_description:
+          type: [string, "null"]
+        country:
+          type: [string, "null"]
+        province:
+          type: [string, "null"]
+        district:
+          type: [string, "null"]
+        area_ha:
+          type: [number, "null"]
+        monitoring_status:
           type: string
-          examples:
-            - Borneo, Indonesia
-        project_duration:
-          type: integer
-          examples:
-            - 30
-        intervention_type:
+          enum: [Monitoring Active, Waiting for Monitoring Plan]
+        ecosystems:
           type: array
           items:
-            type: string
-            examples:
-              - Avoided deforestation
-        estimated_unplanned_deforestation:
-          type: number
-          examples:
-            - 5.5
-        restoration_target:
+            $ref: "#/components/schemas/ProjectEcosystem"
+        intervention:
           type: object
-      description: detailed project information
+          description: the NbS Intervention block; both null until a
+            benefit run persisted its assumptions
+          properties:
+            duration_years:
+              type: [integer, "null"]
+            activities_selected:
+              type: [integer, "null"]
+              description: distinct chosen activity ids across ecosystems
+        documents:
+          type: array
+          description: the Project documents table (Feasibility, Monitoring
+            Plan, ...)
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+              document_type:
+                type: string
+                examples:
+                  - FeasibilityV3
+              document_status:
+                type: string
+                examples:
+                  - Draft
+              document_name:
+                type: [string, "null"]
+              created_at:
+                type: [string, "null"]
+        monitoring_plan:
+          type: [object, "null"]
+          description: counts out of the saved F05 plan; null when no plan
+            yet. Entries logged / frequency summaries wait for F06.
+          properties:
+            activities:
+              type: integer
+            indicators:
+              type: integer
+        created_at:
+          type: [string, "null"]
+        updated_at:
+          type: [string, "null"]
+        analysis:
+          type: object
+          description: >-
+            the Analysis tab's data -- the session's STORED v3 analysis,
+            each section exactly as its stream emitted it (persist merges
+            every line's `data` under its section). A section the project
+            never ran is null; re-running a stream updates it.
+          properties:
+            site_information:
+              type: [object, "null"]
+              description: site-characterisation General components, merged
+                flat
+            nature:
+              type: [object, "null"]
+            climate:
+              type: [object, "null"]
+            people:
+              type: [object, "null"]
+            threat:
+              type: [object, "null"]
+              description: nested per tab (overview / forest / mangrove /
+                peatland)
+            pathway:
+              type: [object, "null"]
+              description: the F02-P4 document (ecosystem cards,
+                project_area_ha, duration config)
+            benefit:
+              type: [object, "null"]
+              description: nested per process (assumptions,
+                avoided_emissions, ... -- the flat card contracts)
+      description: >-
+        the F04.1 detail screen in ONE request -- Overview tab fields plus
+        the Analysis tab's stored sections under `analysis`. Not served yet
+        (no backend data): collaborators, privacy level, history/audit log,
+        MRV entries.
     Document:
       type: object
       required:

@@ -173,8 +173,8 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         # The People-tab cards are answered by the user, not computed. Every slot is emitted
         # (null = not yet specified) so the client knows what can be filled; a filled card is
         # {"statement": ..., "answer": ...} (answer is a list for the livelihood multi-select).
-        # Saving an answer is a re-POST with process: ["assumptions"] and the filled dict --
-        # only this line re-runs and the persisted merge keeps everything else.
+        # Card-by-card saves go through POST /feature/benefit/people; on a re-run the route
+        # reads the stored answers back so this seed does not wipe them.
         view['people_benefits'] = {
             key: (people_benefits or {}).get(key) for key in PEOPLE_BENEFIT_KEYS
         }
