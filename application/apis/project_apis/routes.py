@@ -263,6 +263,13 @@ _ECO_SELECTION_KEYS = {'forest': 'Forest', 'mangrove': 'Mangrove', 'peatland': '
 _PATHWAY_ORDER = ('Protect', 'Manage', 'Restore')
 
 
+def _pathway_json(analyzer):
+    """The v3 pathway result: one object. Legacy rows store a LIST in this column (the v2
+    shape) and carry none of the v3 fields, so anything non-dict reads as empty."""
+    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+    return pathway if isinstance(pathway, dict) else {}
+
+
 def _project_ecosystems(analyzer):
     """`[{name, key, pathways}]` for the dashboard cards and the Ecosystem filter.
 
@@ -279,7 +286,7 @@ def _project_ecosystems(analyzer):
             items.append({'name': name, 'key': key, 'pathways': pathways})
     if items:
         return items
-    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+    pathway = _pathway_json(analyzer)
     for card in pathway.get('ecosystems') or []:
         eligible = {i.get('intervention') for i in card.get('interventions') or []
                     if (i.get('area_ha') or 0) > 0}
@@ -292,8 +299,7 @@ def _project_ecosystems(analyzer):
 
 def _project_area_ha(analyzer, session_id):
     """Total site area: the pathway run's figure, else the polygon's own size."""
-    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
-    area = pathway.get('project_area_ha')
+    area = _pathway_json(analyzer).get('project_area_ha')
     if area is not None:
         return area
     polygon = Polygons.query.filter_by(session_id=session_id).first()
@@ -305,7 +311,8 @@ def _monitoring_status(session_id):
     'Monitoring Active', anything earlier is 'Waiting for Monitoring Plan'. MRV entry counts
     would refine this later; F06 has no backend yet."""
     doc = DocumentData.find_by_session_id_and_type(session_id, 'MonitoringV3')
-    if doc and (doc.form or {}).get('mpPlan'):
+    form = doc.form if doc and isinstance(doc.form, dict) else {}
+    if form.get('mpPlan'):
         return 'Monitoring Active'
     return 'Waiting for Monitoring Plan'
 
@@ -362,8 +369,7 @@ def projects_list():
         for project in projects:
             analyzer = analyzers.get(project.session_id)
             site = (analyzer.site_information_json if analyzer else None) or {}
-            pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
-            area = pathway.get('project_area_ha')
+            area = _pathway_json(analyzer).get('project_area_ha')
             if area is None:
                 area = polygon_areas.get(project.session_id)
 
@@ -444,7 +450,8 @@ def projects_details():
         # monitoring frequency summaries wait for F06.
         monitoring_plan = None
         mp_doc = DocumentData.find_by_session_id_and_type(session_id, 'MonitoringV3')
-        mp_plan = ((mp_doc.form if mp_doc else None) or {}).get('mpPlan')
+        mp_form = mp_doc.form if mp_doc and isinstance(mp_doc.form, dict) else {}
+        mp_plan = mp_form.get('mpPlan')
         if mp_plan:
             activities = [a for eco in mp_plan.get('ecos') or []
                           for a in eco.get('activities') or []]
