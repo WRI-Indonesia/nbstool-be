@@ -2404,11 +2404,53 @@ paths:
                     required:
                       - form
                       - user_input
+                      - plan_seed
                     properties:
                       form:
                         type: object
                       user_input:
                         type: object
+                      plan_seed:
+                        type: object
+                        description: >-
+                          read-only starting data for the F05 plan builder,
+                          from the session's benefit run; empty values when
+                          benefit has not run. Not part of the draft: saving
+                          the form never changes it, and it never overwrites
+                          saved answers.
+                        required:
+                          - selections
+                          - activities
+                        properties:
+                          selections:
+                            type: object
+                            description: >-
+                              the pathway-screen choices per ecosystem key
+                              (forest / mangrove / peatland), each with
+                              protect / manage / restore booleans and the
+                              chosen activity ids
+                            examples:
+                              - peatland:
+                                  protect: false
+                                  manage: false
+                                  restore: true
+                                  activities: ["323", "922"]
+                          activities:
+                            type: array
+                            description: >-
+                              the AOI's eligible activity rows; join to
+                              `/documents/monitoring/v3/activities` by
+                              activity_id for the indicator catalogue
+                            items:
+                              type: object
+                              properties:
+                                activity_id:
+                                  type: string
+                                activity:
+                                  type: string
+                                pathway:
+                                  type: string
+                                  enum: [Protect, Manage, Restore]
           description: Success
         "400":
           $ref: "#/components/responses/Bad Request"
@@ -2417,7 +2459,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/session_id"
       description: >-
-        F03. The monitoring plan form draft for a session. Monitoring LAYERS
+        F03. The monitoring plan form draft for a session, plus `plan_seed`:
+        the benefit run's ecosystem/pathway/activity selections and the AOI's
+        AOI activity rows, for prefilling the plan builder's step 1
+        and the matrix's activity/benefit columns. Monitoring LAYERS
         ON TOP of feasibility: the merge order is analyser prefill, then the
         FeasibilityV3 draft, then MonitoringV3's own answers, later sources
         winning key by key -- so socio-economic answers entered once in the
@@ -2514,6 +2559,89 @@ paths:
                 user_input:
                   type: object
         required: true
+
+  /documents/monitoring/v3/activities:
+    get:
+      tags:
+        - Document module
+      summary: get monitoring activity catalogue
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: MonitoringV3ActivitiesOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - activities
+                    properties:
+                      activities:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - activity
+                            - ecosystem
+                            - pathway
+                            - indicators
+                          properties:
+                            activity_id:
+                              type: string
+                              nullable: true
+                              description: >-
+                                join key to plan_seed.activities; null for
+                                catalogue activities not yet in the canonical
+                                activity table
+                            activity:
+                              type: string
+                            ecosystem:
+                              type: string
+                              enum: [forest, mangrove, peatland]
+                            pathway:
+                              type: string
+                              enum: [Protect, Manage, Restore]
+                            indicators:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  benefit_category:
+                                    type: string
+                                    enum: [Nature, People, Climate]
+                                  benefit:
+                                    type: string
+                                  indicator:
+                                    type: string
+                                  unit:
+                                    type: string
+                                  frequency:
+                                    type: string
+                                  method:
+                                    type: string
+                                    description: suggested data source / survey method
+                                  reference:
+                                    type: string
+                                  definition:
+                                    type: string
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: >-
+        F05. The full monitoring-indicator catalogue: every NbS activity with
+        its ecosystem, pathway and indicator rows (indicator, unit, frequency,
+        method, reference, definition, grouped by benefit). Session
+        independent and served with `Cache-Control: public, max-age=86400` --
+        fetch once and reuse; per-session data stays on
+        `/documents/monitoring/v3`.
+      operationId: getMonitoringV3Activities
 
   /documents/download/docx:
     get:

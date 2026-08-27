@@ -107,6 +107,14 @@ PATHWAY_CATCODE_TO_PATHWAY = {
 # soil_class_lookup.csv, so it is read through settings.layer_path and not vendored in the repo.
 ACTIVITY_TABLE = "canonical_v3_activities.csv"
 
+# The "ELIGIBLE activities-longform" matrix: one row per (activity, benefit, indicator) with
+# unit / frequency / method / reference / definition -- the monitoring-indicator catalog behind
+# the F05 matrix. Exported from the team's longform sheet (via the NbS_Activities_Flow_v2 page's
+# embedded data, 2026-08-27); sits beside ACTIVITY_TABLE under V3_BUCKET. Joined to activities
+# BY TEXT: the sheet carries no activity id (3 of its 31 activities are newer than
+# canonical_v3_activities and have no id anywhere yet).
+LONGFORM_TABLE = "activities_longform_v3.csv"
+
 # ============================ F02-P3 THREAT ============================
 # Twelve rasters, ALL UNDER THE `threat/` PREFIX, and the prefix is load-bearing. Four of these
 # filenames also exist at the v3 root as DIFFERENT, MUCH SMALLER PRODUCTS -- `risk_fire_v3.tif` is

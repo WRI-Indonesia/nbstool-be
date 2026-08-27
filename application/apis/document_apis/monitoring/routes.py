@@ -12,6 +12,8 @@ from ....utils.common import AppMessageException
 from ....utils.common import app_exception_handler, success_handler
 
 from ....utils.document_generator.v3 import generate_monitoring_v3
+from ....utils.geos.v3.common import load_activity_table, load_longform_table, norm_activity
+from ....utils.geos.v3.config import ACTIVITY_TABLE, LONGFORM_TABLE
 from ....models.geos_models.models import DataAnalyzer
 from ....models.master_models.models import DocumentList
 from ..utils import load_draft, save_draft
@@ -40,10 +42,62 @@ def documents_monitoring_v3_get():
         if not session_id:
             raise AppMessageException('please provide session_id')
 
-        _, form, user_input = load_draft(session_id, 'MonitoringV3', _BASE_TYPES)
+        analyzer, form, user_input = load_draft(session_id, 'MonitoringV3', _BASE_TYPES)
 
-        results = {'form': form, 'user_input': user_input}
+        # Read-only seed for the F05 plan builder, straight from the benefit run: the user's
+        # pathway-screen selections, and the AOI's activity/benefit rows so the frontend can
+        # resolve activity ids to names and build the initial matrix. Never merged into the
+        # stored draft -- a seeded `mpPlan` would be clobbered wholesale by the first save,
+        # and stored answers must keep winning.
+        benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
+        general = benefit.get('general_benefit') or {}
+
+        # Indicator rows live in /monitoring/v3/activities (static, HTTP-cached); this seed
+        # stays per-session and slim: the frontend joins the two by activity_id.
+        plan_seed = {
+            'selections': (benefit.get('assumptions') or {}).get('selections') or {},
+            'activities': general.get('activities') or [],
+        }
+
+        results = {'form': form, 'user_input': user_input, 'plan_seed': plan_seed}
         return make_response(jsonify(success_handler({'result': results})), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
+# The full monitoring-indicator catalogue: 31 activities, each with its ecosystem, pathway and
+# indicator rows from the activities-longform matrix. Session-independent, so it is served with
+# a day of HTTP cache -- browsers and the CDN reuse it across sessions instead of every
+# /monitoring/v3 GET carrying ~40 indicator rows per activity. The frontend joins it to
+# plan_seed.activities by activity_id (ids come from the canonical catalog; the longform
+# activities newer than that catalog have activity_id null and cannot appear in an AOI's
+# activity list anyway).
+@document_apis_blueprint.route('/monitoring/v3/activities', methods=['GET'])
+@cross_origin()
+def documents_monitoring_v3_activities():
+    g_var.__api_name__ = 'documents_monitoring_v3_activities'
+
+    try:
+        longform = load_longform_table(LONGFORM_TABLE)
+        ids = {}
+        for rows in load_activity_table(ACTIVITY_TABLE).values():
+            for row in rows:
+                ids.setdefault(norm_activity(row['activity']), row['activity_id'])
+
+        items = [{
+            'activity_id': ids.get(key),
+            'activity': slot['activity'],
+            'ecosystem': slot['ecosystem'],
+            'pathway': slot['pathway'],
+            'indicators': list(slot['indicators']),
+        } for key, slot in longform.items()]
+        items.sort(key=lambda i: (i['ecosystem'], i['pathway'], i['activity']))
+
+        response = make_response(jsonify(success_handler({'result': {'activities': items}})), 200)
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

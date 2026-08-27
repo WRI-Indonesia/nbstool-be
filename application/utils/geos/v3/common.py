@@ -390,6 +390,62 @@ def load_activity_table(layer: str) -> dict[tuple[int, int], tuple[dict, ...]]:
     return {key: tuple(rows) for key, rows in table.items()}
 
 
+# Longform ecosystem names, mapped to the selection keys the tool uses everywhere else
+# (benefit selections, F05 mpPlan ecos). DRYLAND is the longform sheet's name for forest.
+_LONGFORM_ECO_TO_KEY = {"dryland": "forest", "mangrove": "mangrove", "peatland": "peatland"}
+
+
+def norm_activity(text: object) -> str:
+    """The longform join key: activity text, whitespace-collapsed, case- and dot-insensitive.
+    The sheet has no activity id, so text is the only key -- any rewording there breaks the
+    join, which callers must surface rather than swallow."""
+    return " ".join(str(text or "").split()).strip().lower().rstrip(".")
+
+
+@lru_cache(maxsize=1)
+def load_longform_table(layer: str) -> dict[str, dict]:
+    """The activities-longform monitoring catalog, keyed on normalized activity text.
+
+    Returns {norm_activity: {"activity": display text, "ecosystem": key, "pathway": name,
+    "indicators": (rows...)}} --
+    each activity appears under exactly one (ecosystem, pathway) in the sheet, so text alone
+    identifies it. Indicator rows keep the sheet's columns (benefit_category, benefit,
+    indicator, unit, frequency, method, reference, definition). Read once per process, like
+    the activity catalog; tuples because the cache is shared across threads."""
+    df = pd.read_csv(layer_path(layer)).fillna("")
+
+    required = {"pathway", "ecosystem", "activity", "benefit_category", "benefit",
+                "indicator", "unit", "frequency", "method", "reference", "definition"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"{layer} is missing columns {sorted(missing)}.")
+
+    table: dict[str, dict] = {}
+    for _, r in df.iterrows():
+        eco = _LONGFORM_ECO_TO_KEY.get(str(r["ecosystem"]).strip().lower())
+        if eco is None:
+            raise ValueError(f"Unknown ecosystem {r['ecosystem']!r} in {layer}.")
+        slot = table.setdefault(norm_activity(r["activity"]), {
+            "activity": " ".join(str(r["activity"]).split()),
+            "ecosystem": eco,
+            "pathway": str(r["pathway"]).strip().capitalize(),
+            "indicators": [],
+        })
+        slot["indicators"].append({
+            "benefit_category": str(r["benefit_category"]).strip(),
+            "benefit": " ".join(str(r["benefit"]).split()),
+            "indicator": " ".join(str(r["indicator"]).split()),
+            "unit": str(r["unit"]).strip(),
+            "frequency": str(r["frequency"]).strip(),
+            "method": " ".join(str(r["method"]).split()),
+            "reference": " ".join(str(r["reference"]).split()),
+            "definition": " ".join(str(r["definition"]).split()),
+        })
+    for slot in table.values():
+        slot["indicators"] = tuple(slot["indicators"])
+    return table
+
+
 @lru_cache(maxsize=1)
 def _soil_class_rows(layer: str) -> tuple[tuple[int, str, str, str], ...]:
     """The soil lookup CSV as (code, name, hex, description) rows. Read once per process."""
