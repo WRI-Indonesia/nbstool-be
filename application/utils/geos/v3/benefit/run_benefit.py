@@ -1,5 +1,6 @@
 """
-run_benefit.py - the F02-P5 Benefit components (5.1-5.6, 5.9-5.13) behind one runner.
+run_benefit.py - the F02-P5 Benefit components (5.1-5.6, 5.8-5.13) behind one runner.
+Only 5.7 ecological connectivity remains unported (no notebook script yet).
 
 Each component returns the house `(results, view_results)` pair -- plain dicts, like site
 characterisation, threat and pathway. `view_results` is the flat card contract: `applicable`,
@@ -43,6 +44,7 @@ try:
     from .net_carbon import net_carbon_removal, net_emission_reduction
     from .net_errs import net_errs
     from .threatened_species import analyze_threatened_species_habitat
+    from .watershed_protection import analyze_watershed_protection
 except ImportError:  # `python run_benefit.py`: no package around it
     import pathlib
     import sys
@@ -68,6 +70,7 @@ except ImportError:  # `python run_benefit.py`: no package around it
     from net_errs import net_errs
     from pipeline import after, error_status, safe, stream
     from threatened_species import analyze_threatened_species_habitat
+    from watershed_protection import analyze_watershed_protection
 
 
 def run_benefit(aoi: AOI, duration_years: int = INTERVENTION_DURATION_DEFAULT_YEARS,
@@ -127,6 +130,7 @@ _W = {
     'net_emission_reduction': 0.1,
     'net_carbon_removal': 0.1,
     'net_errs': 0.1,
+    'watershed_protection': 3.0,
     'habitat_loss_avoided': 27.0,
     'threatened_species_habitat': 25.0,
     'biodiversity_uplift': 30.0,
@@ -232,6 +236,9 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
                             "gross ERRs to deduct from.")
         return net_errs(gross_er, gross_removal, leakage, uncertainty, buffer, duration_years)
 
+    def _watershed(aoi: AOI) -> tuple[dict, dict]:
+        return analyze_watershed_protection(aoi)
+
     def _habitat(aoi: AOI) -> tuple[dict, dict]:
         return analyze_habitat_loss_avoided(aoi, duration_years, rate_pct, ecosystem_class)
 
@@ -257,6 +264,7 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         'net_emission_reduction': (_net_er, ('avoided_emissions',)),
         'net_carbon_removal': (_net_removal, ('arr_sequestration',)),
         'net_errs': (_net_errs_c, ('avoided_emissions', 'arr_sequestration')),
+        'watershed_protection': (_watershed, ()),
         'habitat_loss_avoided': (_habitat, ()),
         'threatened_species_habitat': (_threatened, ()),
         'biodiversity_uplift': (_uplift, ()),

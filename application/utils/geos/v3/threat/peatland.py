@@ -22,9 +22,10 @@ pressure can be "Not identified", and fire risk has five levels including "Very 
 
 Body unchanged from the notebook, including its mid-body imports of `shapes` and `shape`. Hoisted
 into `analyze_peatland(aoi)` with the AOI block replaced and the helpers nested so they still close
-over `aoi` and the loaded rasters; layer names resolved through `settings.layer_path`. This section's
-reader fills nodata with 0 rather than returning masked arrays -- unlike 3.1 and 3.3 -- so it is kept
-separate rather than shared.
+over `aoi` and the loaded rasters; layer names resolved through `settings.layer_path`. The reader
+follows notebook commit `85af76e` verbatim: `filled=False` masked reads, and a layer with no
+coverage over the AOI falls back to zeros on the ecosystem reference grid ("no value status")
+instead of raising.
 """
 
 from __future__ import annotations
@@ -116,7 +117,18 @@ def analyze_peatland(aoi: AOI):
     # READ RASTER
     # =============================================================================
 
-    def read_raster(path):
+    # Notebook commit `85af76e` ("no value status"), VERBATIM including `filled=False` (team
+    # call 2026-08-28): a layer whose footprint misses the AOI entirely -- the disturbance
+    # raster stops at ~10N, the canal layers only exist over peat regions -- reads as ZEROS on
+    # the reference grid instead of raising. The ONE deviation is a make-it-run fix of the
+    # notebook's own NameError (the cell dropped the `raster_crs`/`drainage_crs` bindings its
+    # polygonise step still reads); reported upstream, same class as the GEOD precedent.
+    def read_raster(
+        path,
+        reference=None,
+        reference_transform=None,
+        reference_crs=None
+    ):
 
         with rasterio.open(layer_path(path)) as src:
 
@@ -126,24 +138,43 @@ def analyze_peatland(aoi: AOI):
                 else aoi
             )
 
-            geometries = [
-                geom.__geo_interface__
-                for geom in polygon.geometry
-            ]
+            try:
 
-            data, transform = mask(
-                src,
-                geometries,
-                crop=True,
-                filled=True,
-                nodata=0
-            )
+                data, raster_transform = mask(
+                    src,
+                    polygon.geometry,
+                    crop=True,
+                    filled=False
+                )
 
-            return (
-                data[0],
-                transform,
-                src.crs
-            )
+                return (
+                    data[0],
+                    raster_transform,
+                    src.crs
+                )
+
+            except ValueError as e:
+
+                if (
+                    "Input shapes do not overlap raster" not in str(e)
+                    or reference is None
+                ):
+                    raise
+
+                # No raster coverage inside AOI -> return zero
+                data = np.ma.array(
+                    np.zeros(
+                        reference.shape,
+                        dtype="float32"
+                    ),
+                    mask=False
+                )
+
+                return (
+                    data,
+                    reference_transform,
+                    reference_crs
+                )
 
     # =============================================================================
     # AREA CALCULATION
@@ -221,27 +252,45 @@ def analyze_peatland(aoi: AOI):
     )
 
     historical, historical_transform, _ = read_raster(
-        HISTORICAL
+        HISTORICAL,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     forest2024, forest2024_transform, _ = read_raster(
-        FOREST_2024
+        FOREST_2024,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     disturbance, disturbance_transform, _ = read_raster(
-        DISTURBANCE
+        DISTURBANCE,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     canal_density, canal_transform, _ = read_raster(
-        PEAT_CANALS_DENSITY
+        PEAT_CANALS_DENSITY,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     fire_risk, fire_transform, _ = read_raster(
-        FIRE_RISK
+        FIRE_RISK,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     drainage_canals, drainage_transform, drainage_crs = read_raster(
-        DRAINAGE_CANALS
+        DRAINAGE_CANALS,
+        ecosystem,
+        transform,
+        raster_crs
     )
 
     # =============================================================================
