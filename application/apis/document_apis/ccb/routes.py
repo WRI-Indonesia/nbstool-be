@@ -3,21 +3,23 @@ from flask import jsonify, request, make_response, current_app, g as g_var, send
 from flask_login import current_user
 from .. import document_apis_blueprint
 from .... import db
-from ....models.user_models.models import SessionsAuth, UserSessions
+from ....models.user_models.models import SessionsAuth, UserSessions, User
 from ....models.master_models.models import DocumentData, DocumentList
-from ....models.geos_models.models import MapExplorer
-from ....models.user_models.models import User
+from ....models.geos_models.models import DataAnalyzer, Polygons
 
 from datetime import datetime, timedelta
 from flask_cors import cross_origin
 from werkzeug.utils import secure_filename
 from pathlib import Path
+from shapely.geometry import box
 
 import os
 import gc
 import uuid
 import json
 import base64
+import string
+import calendar as cal
 
 from ....utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ....utils.common import app_exception_handler, success_handler, sanitize_for_jsonb
@@ -25,6 +27,110 @@ from ....utils.common import app_exception_handler, success_handler, sanitize_fo
 from ...geo_apis.utils import GeoLogic
 
 from ....utils.document_generator import generate_document_form
+
+_MONTH_ABBR = [cal.month_abbr[i] for i in range(1, 13)]
+
+
+def _monthly_series(rows, value_key):
+    """12 monthly values from the v3 `[{month, <value>}]` shape, or None when incomplete."""
+    by_month = {r.get('month'): r.get(value_key) for r in rows or [] if isinstance(r, dict)}
+    series = [by_month.get(m) for m in range(1, 13)]
+    if any(not isinstance(v, (int, float)) for v in series):
+        return None
+    return [round(v, 1) for v in series]
+
+
+def _series_stats(series):
+    stats = {'max': max(series), 'min': min(series), 'mean': sum(series) / len(series)}
+    stats['max_month'] = _MONTH_ABBR[series.index(stats['max'])]
+    stats['min_month'] = _MONTH_ABBR[series.index(stats['min'])]
+    return stats
+
+
+def _dry_season(series):
+    """The v2 builder's dry-season walk, unchanged: from the driest month, walk outward in
+    both directions until a month-to-month jump above 30mm marks the season boundary."""
+    peak = series.index(min(series))
+    start = end = peak
+    total = 0
+    order = [(n + peak) % 12 for n in range(12)]
+    for mi in order[::-1]:
+        if abs(series[mi] - series[(mi + 11) % 12]) > 30:
+            start = mi
+            total += order.index(mi) + 1
+            break
+    for mi in order:
+        if abs(series[mi] - series[(mi + 1) % 12]) > 30:
+            end = mi
+            total += order.index(mi)
+            break
+    return {
+        'peak': peak, 'start': start, 'end': end,
+        'peak_month': _MONTH_ABBR[peak],
+        'start_month': _MONTH_ABBR[start],
+        'end_month': _MONTH_ABBR[end],
+        'category': 'short' if total <= 3 else 'long',
+    }
+
+
+def _tpl_data_v3(session_id, analyzer):
+    """The tpl_data keys `assets/ccb_template.docx` actually references, from the v3 analyser
+    JSONB. (The v2 builder, GeoLogic.get_template_data, read the dead pickle columns and built
+    ~40 keys; the template uses 13 -- location, area, geometry corners, elevation/slope,
+    peatland flag and the two monthly climate tables.)"""
+    site = (analyzer.site_information_json if analyzer else None) or {}
+    climate = (analyzer.climate_json if analyzer else None) or {}
+
+    data = {'current_year': datetime.now().year}
+
+    district = string.capwords(site.get('district') or '')
+    province = string.capwords(site.get('province') or '')
+    country = string.capwords(site.get('country') or '')
+    data['district'] = district
+    data['province'] = province
+    data['project_location'] = ', '.join(p for p in (district, province, country) if p)
+
+    _, geom_gdf = GeoLogic.construct_polygon(session_id)
+    center = box(*geom_gdf.total_bounds).centroid
+    data['geom_center'] = {'longitude': center.x, 'latitude': center.y}
+    data['geom_center_dms'] = GeoLogic.coords_to_string(center.x, center.y)
+    data['geom_min_dms'] = GeoLogic.coords_to_string(geom_gdf.bounds.minx[0], geom_gdf.bounds.miny[0])
+    data['geom_max_dms'] = GeoLogic.coords_to_string(geom_gdf.bounds.maxx[0], geom_gdf.bounds.maxy[0])
+
+    # Pathway run's figure, else the polygon's own size (legacy rows store a LIST in the
+    # pathway column, which reads as absent).
+    pathway = (analyzer.intervention_eligibility_json if analyzer else None) or {}
+    area = pathway.get('project_area_ha') if isinstance(pathway, dict) else None
+    if area is None:
+        polygon = Polygons.query.filter_by(session_id=session_id).first()
+        area = polygon.project_area_size if polygon else None
+    data['area_size'] = f"{area:,.2f}" if isinstance(area, (int, float)) else ''
+
+    data['has_peatland'] = any(
+        eco.get('name') in ('Peatland', 'Mangrove') and (eco.get('area') or 0) > 0
+        for eco in site.get('ecosystems') or [] if isinstance(eco, dict))
+
+    # The template prints slope % alongside the predominant elevation class.
+    slope = site.get('average_slope_percentage')
+    data['top_elevation'] = [{
+        'elevation_class': (site.get('predominant_elevation_dict') or {}).get('fallback') or '',
+        'elevation_pct': f"{slope:.2f}" if isinstance(slope, (int, float)) else '',
+    }]
+
+    for key, rows_key, value_key in (
+            ('precipitation', 'historical_precipitations', 'precipitation'),
+            ('temperature', 'historical_temperatures', 'temperature')):
+        series = _monthly_series(climate.get(rows_key), value_key)
+        if series:
+            block = {'graph_data': series, 'graph': _series_stats(series)}
+            if key == 'precipitation':
+                block['graph']['dry_season'] = _dry_season(series)
+        else:
+            # The monthly table indexes graph_data[0..11] unconditionally.
+            block = {'graph_data': [''] * 12, 'graph': None}
+        data[key] = block
+
+    return data
 
 
 # legacy: /nbsapi/feature/document-data [POST]
@@ -109,29 +215,32 @@ def documents_update_document_data_ccb():
         db.session.add(known_document_data)
         db.session.commit()
 
-        known_user_session = UserSessions.find_by_session_id(known_document_list.project_id)
-        if not known_user_session:
-            known_user_session = UserSessions()
-        known_user = User.query.filter_by(id=known_user_session.user_id).first()
-        if not known_user:
-            known_user = User()
-        
-        intervention = MapExplorer.find_by_session_id(known_document_list.project_id)
-        if not intervention:
-            intervention = MapExplorer()
-        
-        GeoLogic.handle_section_data(known_document_data)
-        
+        if isinstance(known_document_data.section_2, dict):
+            GeoLogic.handle_section_data(known_document_data)
+
+        known_user_session = UserSessions.find_by_session_id(session_id)
+        known_user = (User.query.filter_by(id=known_user_session.user_id).first()
+                      if known_user_session else None)
+
+        analyzer = DataAnalyzer.find_by_session_id(session_id)
+        # Project lifetime: the v2 MapExplorer params are dead; the v3 benefit run's
+        # assumptions carry the duration.
+        benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
+        duration = (benefit.get('assumptions') or {}).get('duration_years')
+
+        # Exactly what the template reads: the five section dicts, tpl_data, the preparer's
+        # user block and the project duration. The v2 tpl builder read the dead pickle
+        # analyser columns -- _tpl_data_v3 builds the referenced keys from the v3 JSONB.
         data = {
             'project_id': known_document_list.project_id,
             'user': {
-                'fullname': known_user.name,
-                'email': known_user.email
+                'fullname': known_user.name if known_user else '',
+                'email': known_user.email if known_user else '',
+                'phone': ((known_user.extended_data or {}).get('phone') or ''
+                          if known_user else ''),
             },
             'param': {
-                'project_duration': intervention.project_duration,
-                'estimated_unplanned_deforestation': intervention.estimated_unplanned_deforestation,
-                'rest_target': intervention.rest_target,
+                'project_duration': duration,
             },
             'section_1': known_document_data.section_1,
             'section_2': known_document_data.section_2,
@@ -139,7 +248,7 @@ def documents_update_document_data_ccb():
             'section_4': known_document_data.section_4,
             'section_5': known_document_data.section_5,
 
-            'tpl_data': GeoLogic.get_template_data(session_id, [n for n in range(1, 6) if eval('known_document_data.section_{}'.format(n))]),
+            'tpl_data': _tpl_data_v3(session_id, analyzer),
         }
 
         # tasks = form_template_task.delay(session_id, data)

@@ -2151,7 +2151,12 @@ paths:
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
-      description: create or update CCB document section data
+      description: >-
+        create or update CCB document section data, then regenerate the CCB
+        docx. The template's site/climate figures (location, area, elevation,
+        peatland flag, monthly precipitation/temperature tables) fill from the
+        session's v3 analysis; project duration comes from the benefit run's
+        assumptions.
       operationId: updateCcb
       requestBody:
         content:
