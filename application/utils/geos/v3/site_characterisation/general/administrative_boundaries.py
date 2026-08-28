@@ -126,18 +126,29 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
     flags: list[str] = []
     missing: list[str] = []
 
-    if districts:
-        main = districts[0]
-        # Province of the named district, not the largest province. See the note above.
-        main_province = main.parent or (provinces[0].name if provinces else None)
-        where = f"{main.name}, {main_province}" if main_province else main.name
-    elif provinces:
-        # L2 is missing for some countries. Fall back to province level rather than emit a
-        # sentence with an empty slot.
-        where = provinces[0].name
+    # DOMINANCE IS HIERARCHICAL (changed 2026-08-28): the largest unit WITHIN the dominant
+    # parent, not the largest anywhere. The flat rule named "Marudi, Sarawak" on an AOI 77%
+    # inside Brunei's Belait, because the boundary source carries no district rows for Brunei
+    # at all -- the only districts anywhere on the site were Malaysian. Chaining country ->
+    # province -> district keeps every level of the answer inside the same place. The `or`
+    # fallbacks keep the old flat pick when parent names do not line up (a data oddity, not a
+    # reason to answer nothing).
+    dominant_country = countries[0].name if countries else None
+    in_country = [u for u in provinces if u.parent == dominant_country] or provinces
+    dominant_province = in_country[0].name if in_country else None
+    in_province = [u for u in districts if u.parent == dominant_province]
+    main = in_province[0] if in_province else None
+
+    if main:
+        where = f"{main.name}, {dominant_province}" if dominant_province else main.name
+    elif dominant_province:
+        # L2 is missing for some countries (Brunei has no district rows at all). Fall back to
+        # province level rather than emit a sentence with an empty slot -- or, transboundary,
+        # a district from the wrong country.
+        where = dominant_province
         flags.append(
-            "1.2: no GADM L2 district returned above the 1% sliver threshold. The narrative "
-            "falls back to province level."
+            "1.2: no GADM L2 district within the dominant province above the 1% sliver "
+            "threshold. The narrative falls back to province level."
         )
     else:
         where = None
@@ -155,12 +166,20 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         else f"This project area has an approximate total area of {area_text} hectares."
     )
 
-    # Second sentence only when there is more than one district to list.
+    # Second sentence only when the dominant province itself has more than one district to
+    # list -- "Within this province" must not introduce another country's districts.
     follow = (
         "Within this province, it also overlaps with the following districts:"
-        if len(districts) > 1
+        if len(in_province) > 1
         else ""
     )
+
+    # Levels 3 and 4 chain the same way: the largest inside the dominant parent.
+    dominant_subdistrict = next(
+        (u.name for u in subdistricts if main and u.parent == main.name), None)
+    dominant_village = next(
+        (u.name for u in villages if dominant_subdistrict and u.parent == dominant_subdistrict),
+        None)
 
     if len(provinces) > 1:
         flags.append(
@@ -186,13 +205,11 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
             'village': villages,
         },
         'values': {
-            'dominant_country': countries[0].name if countries else None,
-            'dominant_province': districts[0].parent if districts else (
-                provinces[0].name if provinces else None
-            ),
-            'dominant_district': districts[0].name if districts else None,
-            'dominant_subdistrict': subdistricts[0].name if subdistricts else None,
-            'dominant_village': villages[0].name if villages else None,
+            'dominant_country': dominant_country,
+            'dominant_province': dominant_province,
+            'dominant_district': main.name if main else None,
+            'dominant_subdistrict': dominant_subdistrict,
+            'dominant_village': dominant_village,
             'transboundary': len(countries) > 1,
             'provinces': [u.name for u in provinces],
         },
