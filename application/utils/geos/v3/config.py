@@ -773,9 +773,9 @@ SOCIAL_INDICATORS = {
     # -- Brunei -------------------------------------------------------- no households table
     "brn": {
         "employment": {
-            "unemployment_rate_percentage": _ind("unemployment_rate", 1, subgroup="Total"),
+            "unemployment_rate_percentage": _ind("unemployment_rate", 0, subgroup="Total"),
             "underemployment_rate_percentage": _ind("underemployment_rate", 1, subgroup="Total"),
-            "employment_rate_percentage": _ind("employment_rate", 1, subgroup="Total"),
+            "employment_rate_percentage": _ind("employment_rate", 0, subgroup="Total"),
             "employment_sectors": _ind("employment_by_sector", 1, "shares", subgroup="Total"),
             "industries_occupations": _ind("top3_industries", 0, "shares", subgroup="Total"),
         },
