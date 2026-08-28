@@ -25,8 +25,11 @@ RUN python3 -m venv /opt/venv \
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+# ca-certificates: python's ssl module needs the system trust store to reach the v3 bucket
+# (pandas/urllib reads: the CSVs and the species geoparquet). GDAL's /vsicurl carries its own
+# CA path, which is why rasters worked while every urllib read died CERTIFICATE_VERIFY_FAILED.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 gdal-bin poppler-utils \
+        python3 gdal-bin poppler-utils ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv

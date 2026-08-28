@@ -6,6 +6,7 @@ build_runner/cloudbuild.yaml
 gcp-sa.json
 generated-geopdf/
 .claude/
+loadtest/aoi_pool.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
