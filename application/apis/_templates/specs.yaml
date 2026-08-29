@@ -1455,8 +1455,11 @@ paths:
         per-ecosystem pathway toggles and chosen activity ids. Selections are
         echoed on the `assumptions` line and persisted (they feed the
         document templates' Chosen NbS Activities and the F05 monitoring
-        flow); they do NOT gate the quantification -- 5.2/5.3 quantify
-        eligibility as the notebook does.
+        flow). They filter 5.1's CONTENT -- a de-toggled pathway's
+        activities and benefits drop from `general_benefit`, and a
+        non-empty activity-id list keeps only those ids -- but they do NOT
+        gate the quantification: 5.2/5.3 and the habitat components
+        quantify eligibility as the notebook does, whatever is toggled.
 
         RETRY: the endpoint is POST, so lines carry no `retry_url`; re-POST
         the same body with `process: ["<name>", ...]` to re-run and re-emit
@@ -1537,8 +1540,9 @@ paths:
                   description: >-
                     the screen's per-ecosystem pathway toggles and chosen
                     activity ids, keyed forest / mangrove / peatland. Echoed
-                    on the `assumptions` line and persisted; not used in the
-                    quantification.
+                    on the `assumptions` line and persisted. Filters 5.1's
+                    activities/benefits content (empty activities list =
+                    all of a toggled-on pathway); never the quantification.
                   examples:
                     - forest:
                         protect: true

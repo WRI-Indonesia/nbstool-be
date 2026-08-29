@@ -15,7 +15,10 @@ class Config:
     
     # SQLALCHEMY_POOL_SIZE = 30 # custom pool size
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 30, # custom pool size
+        # 15, down from 30: 8 gunicorn threads per instance cannot hold more than a few
+        # checkouts at once; 30 per instance was dead weight against the backend server's
+        # max_connections once the MIG scales out.
+        'pool_size': 15,
         'max_overflow': 0, # as recommended in https://docs.sqlalchemy.org/en/20/core/pooling.html
     }
     

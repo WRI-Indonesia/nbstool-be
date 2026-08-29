@@ -24,7 +24,11 @@ gcs = CloudStorage()
 class GeoUtils():
 
     GIS_DB_CONNECTION_TIMEOUT = 30000 # 30 sec
-    engine = create_engine(current_app.config.get('GIS_DB_CONSTRING'), pool_size=30, max_overflow=0) # as recommended in https://docs.sqlalchemy.org/en/20/core/pooling.html
+    # pool_size 8, down from 30: this engine only serves the polygon-post path (gadm_bbox +
+    # area calc, sub-second queries), and 30 per instance was the single biggest claim on the
+    # GIS server's max_connections once the MIG scales out. Eight concurrent checkouts is more
+    # than the 8 gunicorn threads can ever demand.
+    engine = create_engine(current_app.config.get('GIS_DB_CONSTRING'), pool_size=8, max_overflow=0)
     connection = engine.connect()
     connection.execute(db.text("SET statement_timeout = {}".format(GIS_DB_CONNECTION_TIMEOUT)))
     current_app.logger.info('''

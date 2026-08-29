@@ -140,3 +140,36 @@ def analyze_general_benefit(pathway_stage: dict) -> tuple[dict, dict]:
         'benefits': benefit_rows,
     }
     return results, view_results
+
+
+if __name__ == "__main__":
+    # Run this component on its own, no Flask app and no database:
+    #     python general_benefit.py [aoi path]
+    # 5.1 reads the 4.2 activity table, so 4.2 is run here the same way run_benefit does.
+    import json
+    import os
+    import pathlib
+    import sys
+    import time
+
+    import geopandas as gpd
+
+    try:
+        from common import prepare_aoi, to_jsonable
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "pathway"))
+        from activity_list import analyze_activity_list
+    except ImportError:
+        from ..common import prepare_aoi, to_jsonable
+        from ..pathway.activity_list import analyze_activity_list
+
+    aoi_path = sys.argv[1] if len(sys.argv) > 1 else r"D:\Documents\ALL\_test\nbs\AOI1.shp"
+    if aoi_path.lower().endswith(".zip"):
+        aoi_path = "zip://" + os.path.abspath(aoi_path).replace("\\", "/")
+
+    aoi = prepare_aoi(gpd.read_file(aoi_path))
+    stage = {"components": {"4.2": to_jsonable(analyze_activity_list(aoi))}}
+
+    t0 = time.perf_counter()
+    results, view_results = analyze_general_benefit(stage)
+    print(f"[{time.perf_counter() - t0:.1f}s]")
+    print(json.dumps(to_jsonable(view_results), indent=2, ensure_ascii=False, default=str))

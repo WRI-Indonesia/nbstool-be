@@ -147,6 +147,53 @@ _DEACTIVATED = ("This section is deactivated: the project was not marked as an N
 PEOPLE_BENEFIT_KEYS = ('food_water', 'livelihood', 'social', 'equity', 'tenure', 'cultural')
 
 
+# ---- Selection filtering, Tier 1 (team go 2026-08-28) --------------------------------------
+# 5.1's CONTENT respects the pathway screen's toggles and activity picks; QUANTIFICATION does
+# not -- 5.2's QB gate keeps the UNFILTERED stage, so deselecting Protect never flips the
+# numbers (gating them is open decision (3), the data team's call). The filter lives here in
+# the seam so analyze_general_benefit stays verbatim.
+
+# 4.2's by_category keys end in its ecosystem label; selections are keyed by the three cards.
+# Savanna folds into the forest card, same as the pathway screen (ECOSYSTEM_BUCKETS).
+_ECO_LABEL_TO_SELECTION = {"Dryland forest": "forest", "Savanna": "forest",
+                           "Mangrove": "mangrove", "Peatland": "peatland"}
+
+
+def _filter_stage(stage: dict, selections) -> dict:
+    """The 4.2 stage with `by_category` reduced to the user's selections.
+
+    Toggle semantics match the docx context's: a de-toggled pathway drops its ecosystem's
+    activities; a non-empty `activities` id list keeps only those ids (empty = keep all). A
+    category whose ecosystem has no selection entry is kept -- absence of an opinion is not a
+    deselection. No selections at all -> the stage untouched.
+    """
+    if not selections:
+        return stage
+    try:
+        component = stage['components']['4.2']
+        by_category = component['values']['by_category']
+    except (KeyError, TypeError):
+        return stage
+
+    filtered = {}
+    for key, info in by_category.items():
+        selection_key = _ECO_LABEL_TO_SELECTION.get(key.rsplit('|', 1)[-1].strip())
+        chosen = selections.get(selection_key) if selection_key else None
+        if not isinstance(chosen, dict):
+            filtered[key] = info
+            continue
+        if not chosen.get(str(info.get('pathway', '')).lower()):
+            continue  # this ecosystem's pathway is toggled off
+        ids = {str(i) for i in (chosen.get('activities') or [])}
+        activities = info.get('activities') or []
+        if ids:
+            activities = [a for a in activities if str(a.get('activity_id')) in ids]
+        filtered[key] = {**info, 'activities': activities}
+
+    return {**stage, 'components': {**stage['components'], '4.2': {
+        **component, 'values': {**component['values'], 'by_category': filtered}}}}
+
+
 def _na_pair(reason: str) -> tuple[dict, dict]:
     """A not-applicable card built in this seam (deactivated toggle, missing dependency).
     `missing` -> error_status `failed`: this IS the answer, no retry can change it. The
@@ -193,7 +240,8 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         return results.get('stage', {'components': {}})
 
     def _general(aoi: AOI, stage) -> tuple[dict, dict]:
-        return analyze_general_benefit(_stage_of(stage))
+        # Only 5.1 sees the selection-filtered stage; 5.2's QB gate below reads it unfiltered.
+        return analyze_general_benefit(_filter_stage(_stage_of(stage), selections))
 
     def _avoided(aoi: AOI, stage) -> tuple[dict, dict]:
         return analyze_avoided_deforestation_emissions(

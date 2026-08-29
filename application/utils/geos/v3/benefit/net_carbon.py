@@ -73,3 +73,24 @@ def net_carbon_removal(gross_removal: float, leakage: float, uncertainty: float,
     results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
     view_results = {'applicable': True, 'narrative': narrative, **values}
     return results, view_results
+
+
+if __name__ == "__main__":
+    # Run the components on their own, pure arithmetic, no data access:
+    #     python net_carbon.py [gross_er] [gross_removal] [leakage] [uncertainty] [buffer]
+    import json
+    import sys
+
+    args = [float(a) for a in sys.argv[1:]]
+    gross_er = args[0] if len(args) > 0 else 934913.84
+    gross_removal = args[1] if len(args) > 1 else 1470590.88
+    leakage = args[2] if len(args) > 2 else 15.0
+    uncertainty = args[3] if len(args) > 3 else 10.0
+    buffer = args[4] if len(args) > 4 else 12.0
+
+    _, view_er = net_emission_reduction(gross_er, leakage, uncertainty, buffer)
+    _, view_removal = net_carbon_removal(gross_removal, leakage, uncertainty, buffer)
+    print("=== 5.4 net_emission_reduction ===")
+    print(json.dumps(view_er, indent=2, ensure_ascii=False))
+    print("=== 5.5 net_carbon_removal ===")
+    print(json.dumps(view_removal, indent=2, ensure_ascii=False))

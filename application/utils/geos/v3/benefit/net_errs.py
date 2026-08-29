@@ -61,3 +61,21 @@ def net_errs(gross_er: float, gross_removal: float, leakage: float, uncertainty:
     results = {'narrative': narrative, 'tables': {}, 'values': values, 'flags': []}
     view_results = {'applicable': True, 'narrative': narrative, **values}
     return results, view_results
+
+
+if __name__ == "__main__":
+    # Run this component on its own, pure arithmetic, no data access:
+    #     python net_errs.py [gross_er] [gross_removal] [leakage] [uncertainty] [buffer] [years]
+    import json
+    import sys
+
+    args = [float(a) for a in sys.argv[1:]]
+    gross_er = args[0] if len(args) > 0 else 934913.84
+    gross_removal = args[1] if len(args) > 1 else 1470590.88
+    leakage = args[2] if len(args) > 2 else 15.0
+    uncertainty = args[3] if len(args) > 3 else 10.0
+    buffer = args[4] if len(args) > 4 else 12.0
+    years = int(args[5]) if len(args) > 5 else 20
+
+    _, view_results = net_errs(gross_er, gross_removal, leakage, uncertainty, buffer, years)
+    print(json.dumps(view_results, indent=2, ensure_ascii=False))

@@ -186,12 +186,31 @@ from ..utils import GeoLogic
 # under somebody else's run. Weight the count if the queueing ever bites.
 _SITECHAR_SLOTS = threading.BoundedSemaphore(6)
 
+# Multi-slot acquisition happens one requester at a time, or two weight-2 runs each holding one
+# slot could wait forever for each other's second. Holding this lock while blocked on the
+# semaphore also makes the queue FIFO: a waiting union is not starved by later one-slot runs
+# slipping past it.
+_SLOTS_ACQUIRE_LOCK = threading.Lock()
 
-def _limit_slots(gen):
-    """Run `gen` while holding a slot. Acquired lazily at the first NDJSON line, released on
-    exhaustion and on close(), which stream_with_context calls when the client disconnects."""
-    with _SITECHAR_SLOTS:
+
+def _limit_slots(gen, weight=1):
+    """Run `gen` while holding `weight` slots. Acquired lazily at the first NDJSON line, released
+    on exhaustion and on close(), which stream_with_context calls when the client disconnects.
+
+    `weight` exists because the slot budget is MEMORY, and the union analysis run is not one
+    characterisation run: it holds site characterisation's ~25 rasters plus threat's twelve at
+    once. Measured 2026-08-28 (k6, 6 concurrent unions on a 4 GB c2d-highcpu-2): the worker was
+    OOM-killed repeatedly, resetting every in-flight stream. At weight 2 the union takes a
+    characterisation-sized budget twice over, capping unions at 3 per instance.
+    """
+    with _SLOTS_ACQUIRE_LOCK:
+        for _ in range(weight):
+            _SITECHAR_SLOTS.acquire()
+    try:
         yield from gen
+    finally:
+        for _ in range(weight):
+            _SITECHAR_SLOTS.release()
 
 
 # FRONTEND ERROR-PATH REHEARSAL. `?error_test=` makes this endpoint fail ON PURPOSE, so the three
@@ -345,8 +364,9 @@ def geo_feature_site_characterisation():
 # component names are unique across the three stages, so `?process=` addresses any card. The
 # individual endpoints below remain for tooling and single-stage runs.
 #
-# Takes a _SITECHAR_SLOTS slot: this run holds site characterisation's ~25 raster windows PLUS
-# threat's twelve rasters and pathway's band reads.
+# Takes TWO _SITECHAR_SLOTS slots: this run holds site characterisation's ~25 raster windows PLUS
+# threat's twelve rasters and pathway's band reads. At weight 1, six concurrent unions OOM-killed
+# the worker (measured 2026-08-28); see _limit_slots.
 @geo_apis_blueprint.route('/feature/analysis', methods=['GET'])
 @cross_origin()
 def geo_feature_analysis():
@@ -381,8 +401,10 @@ def geo_feature_analysis():
     def retry_url(process):
         return f"{path}?{urlencode({'session_id': session_id, 'process': process})}"
 
+    # weight 2: see _limit_slots. A partial re-run (?process=) is still charged the full union
+    # weight, same over-conservative choice as retries taking a whole slot.
     lines = _limit_slots(persist_ndjson(
-        stream_analysis(aoi, wanted, retry_url), session_id, ANALYSIS_COLUMNS.get))
+        stream_analysis(aoi, wanted, retry_url), session_id, ANALYSIS_COLUMNS.get), weight=2)
 
     return Response(
         stream_with_context(lines),
