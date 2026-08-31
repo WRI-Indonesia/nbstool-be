@@ -25,7 +25,7 @@ from ....utils.document_generator.v3 import generate_feasibility_v3
 from ....utils.document_generator.v3.prefill import feasibility_prefill, merge_form
 from ....models.geos_models.models import DataAnalyzer
 from ....models.master_models.models import DocumentList
-from ..utils import load_draft, save_draft
+from ..utils import generate_extra_tags, load_draft, save_draft
 
 from .. import gcs
 
@@ -142,6 +142,7 @@ def documents_feasibility_v3():
             analyzer,
             form=merge_form(stored.form, feasibility_prefill(analyzer)),
             user_input=stored.user_input or {},
+            extra_tags=generate_extra_tags(session_id),
         )
 
         gcs.upload(output_path)

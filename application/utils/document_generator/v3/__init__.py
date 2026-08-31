@@ -22,13 +22,17 @@ OUTPUT_FOLDER = "generated-file/docx-v3/"
 
 
 def _generate(template_path: str, suffix: str, session_id: str, analyzer,
-              form: dict | None, user_input: dict | None) -> str:
+              form: dict | None, user_input: dict | None,
+              extra_tags: dict | None = None) -> str:
     """Render one template for one session. Returns the saved file path.
 
     Unfilled tags render as their literal `[bracket]` text on purpose: the team fills those
-    manually in the output document.
+    manually in the output document. `extra_tags` is generate-time metadata the ROUTE knows and
+    the analyzer does not -- project title, organisation, date -- keyed by EXACT tag text (the
+    user_input channel cannot reach category-less tags like [PROJECT TITTLE]: its merge prefixes
+    bare keys with "User input: ").
     """
-    context = build_context(analyzer, form, user_input)
+    context = build_context(analyzer, form, user_input, extra_tags)
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -41,10 +45,12 @@ def _generate(template_path: str, suffix: str, session_id: str, analyzer,
 
 
 def generate_feasibility_v3(session_id: str, analyzer, form: dict | None,
-                            user_input: dict | None) -> str:
-    return _generate(FEASIBILITY_TEMPLATE, "feasibility", session_id, analyzer, form, user_input)
+                            user_input: dict | None, extra_tags: dict | None = None) -> str:
+    return _generate(FEASIBILITY_TEMPLATE, "feasibility", session_id, analyzer, form, user_input,
+                     extra_tags)
 
 
 def generate_monitoring_v3(session_id: str, analyzer, form: dict | None,
-                           user_input: dict | None) -> str:
-    return _generate(MONITORING_TEMPLATE, "monitoring", session_id, analyzer, form, user_input)
+                           user_input: dict | None, extra_tags: dict | None = None) -> str:
+    return _generate(MONITORING_TEMPLATE, "monitoring", session_id, analyzer, form, user_input,
+                     extra_tags)

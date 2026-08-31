@@ -16,7 +16,7 @@ from ....utils.geos.v3.common import load_activity_table, load_longform_table, n
 from ....utils.geos.v3.config import ACTIVITY_TABLE, LONGFORM_TABLE
 from ....models.geos_models.models import DataAnalyzer
 from ....models.master_models.models import DocumentList
-from ..utils import load_draft, save_draft
+from ..utils import generate_extra_tags, load_draft, save_draft
 
 from .. import gcs
 
@@ -140,7 +140,8 @@ def documents_monitoring_v3():
             raise AppMessageException('fail, session id Not found')
 
         output_path = generate_monitoring_v3(session_id, analyzer, form=form,
-                                             user_input=user_input)
+                                             user_input=user_input,
+                                             extra_tags=generate_extra_tags(session_id))
 
         gcs.upload(output_path)
 

@@ -110,6 +110,8 @@ def _site_characterisation_tags(si: dict, pathway: dict) -> dict:
     named = [c for c in classes if c.get("id") != "0"]
     tags["Site Characterisation: top 3 land cover class"] = _join(
         [c.get("name") for c in named[:3]])
+    tags["Site Characterisation: Land cover class"] = (
+        named[0].get("name") if named else None)
     for position, ordinal in enumerate(("1st", "2nd", "3rd")):
         row = named[position] if position < len(named) else {}
         tags[f"Site Characterisation: {ordinal} land cover class"] = row.get("name")
@@ -277,6 +279,40 @@ def _nature_tags(nature: dict) -> dict:
         nature.get("overlapping_key_biodiversity_area_percentage"))
     tags["Nature: in percent of total AOI area"] = _pct(
         nature.get("overlapping_key_biodiversity_area_percentage"))
+
+    # Endangered species by NAME (CR/EN/VU out of the 2.3 inventory list; the counts above come
+    # from iucn_summary).
+    tags["Nature: name of endangered species"] = _join(
+        s.get("scientific_name") for s in nature.get("species_list", [])
+        if isinstance(s, dict) and s.get("redlist_category") in ("CR", "EN", "VU"))
+
+    # Bare variants the template also uses.
+    tags["Nature: keystone species names"] = tags["Nature: keystone species"]
+    tags["amphibian species count"] = nature.get("amphibian_number_of_species")
+
+    # 2.6 Conservation significance. `conservation_priority_rank` is a global PERCENTILE (lower
+    # is better), not a 0-10 score -- the template's "scored ... out of 10" wording predates the
+    # data shape (flagged to the doc team). Axis shares are read at each scenario's tightest
+    # budget, dominant first.
+    sig_rows = [r for r in nature.get("conservation_significances", []) if isinstance(r, dict)]
+    if sig_rows:
+        def _budget(row):
+            try:
+                return float(row.get("budget_id"))
+            except (TypeError, ValueError):
+                return float("inf")
+        best: dict = {}
+        for row in sig_rows:
+            scenario = str(row.get("scenario_id") or "")
+            if scenario and (scenario not in best or _budget(row) < _budget(best[scenario])):
+                best[scenario] = row
+        ordered = sorted(best.values(), key=lambda r: -(r.get("percentage") or 0))
+        tags["Nature: biodiversity / water / carbon"] = ordered[0].get("scenario_id")
+        tags["Nature: Conservation Significance (biodiversity/water/carbon)"] = _join(
+            f"{r.get('scenario_id')} {_pct(r.get('percentage'))}%" for r in ordered)
+    rank = nature.get("conservation_priority_rank")
+    if isinstance(rank, (int, float)):
+        tags["Nature: conservation significance score"] = f"global top {rank:,.0f}%"
     return tags
 
 
@@ -377,12 +413,15 @@ def _benefit_pillar_counts(benefit: dict) -> dict:
     return counts
 
 
-def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
+def build_context(analyzer, form: dict | None, user_input: dict | None,
+                  extra_tags: dict | None = None) -> dict:
     """The docxtpl context: `t` lookup, loop lists and condition flags.
 
     `analyzer` is the session's DataAnalyzer row (may be None); `form` the F03 socio-economic
     payload; `user_input` free overrides keyed by tag text, with or without the `User input: `
-    prefix.
+    prefix. `extra_tags` is generate-time metadata keyed by EXACT tag text (project title,
+    organisation, date -- the route knows these, the analyzer does not); user_input still wins
+    where both name the same tag.
     """
     si = (analyzer.site_information_json if analyzer else None) or {}
     nature = (analyzer.nature_json if analyzer else None) or {}
@@ -421,18 +460,17 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
     tags.update(_people_tags(people))
     tags.update(_form_tags(form or {}))
 
+    # Generate-time metadata, keyed by exact tag text. Before user_input so a typed value wins.
+    for key, value in (extra_tags or {}).items():
+        if value not in (None, ""):
+            tags[str(key)] = value
+
     for key, value in (user_input or {}).items():
         if value in (None, ""):
             continue
         key = _norm(str(key))
         # Bare keys fill `[User input: <key>]`; a full "Category: name" key overrides any tag.
         tags[key if ": " in key else f"User input: {key}"] = value
-
-    lookup = {_norm(k): v for k, v in tags.items() if v is not None}
-
-    def t(tag_text: str) -> str:
-        value = lookup.get(_norm(tag_text))
-        return str(value) if value is not None else f"[{tag_text}]"
 
     named = [c for c in si.get("land_cover_class", [])
              if isinstance(c, dict) and c.get("id") != "0"]
@@ -462,6 +500,7 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
                   or benefit.get("selections") or {})
 
     ecos = []
+    all_chosen: list = []   # distinct chosen activities across every ecosystem, template order
     cards = {e.get("label"): e for e in pathway.get("ecosystems", []) if isinstance(e, dict)}
     for label, plan_key in (("Forest", "forest"), ("Mangrove", "mangrove"),
                             ("Peatland", "peatland")):
@@ -492,6 +531,7 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
             entry[f"activities_{name.lower()}"] = _join(acts) or "[NbS Pathway: Chosen NbS Activities]"
             names.extend(a for a in acts if a not in names)
         entry["activities_all"] = _join(names) or "[NbS Pathway: Chosen NbS Activities]"
+        all_chosen.extend(n for n in names if n not in all_chosen)
 
         entry["indicator_rows"] = [
             {
@@ -513,6 +553,29 @@ def build_context(analyzer, form: dict | None, user_input: dict | None) -> dict:
          "redlist_category": s.get("redlist_category")}
         for s in nature.get("species_list", []) if isinstance(s, dict)
     ]
+
+    # Flat pathway/benefit tags that need the resolved ecosystem blocks or the run's inputs --
+    # which is why `t`'s lookup is built down here, after everything that writes a tag.
+    if all_chosen:
+        tags["NbS Pathway: Chosen NbS Activities"] = _join(all_chosen)
+        tags["NbS Pathway: x NbS Activities"] = f"{len(all_chosen)} NbS activities"
+    chosen_pathways = [pw for pw in ("Protect", "Manage", "Restore")
+                       if any((selections.get(key) or {}).get(pw.lower())
+                              for key in ("forest", "mangrove", "peatland"))]
+    if not chosen_pathways:
+        chosen_pathways = [pw for pw in ("Protect", "Manage", "Restore") if pw in (
+            (benefit.get("general_benefit") or {}).get("pathways_present") or [])]
+    tags["NbS Pathway: Protect / Manage / Restore"] = _join(chosen_pathways, " + ")
+    run_duration = ((benefit.get("assumptions") or {}).get("duration_years")
+                    or (pathway.get("duration_years") or {}).get("default"))
+    if run_duration:
+        tags["NbS Pathway: x duration"] = f"{run_duration} years"
+
+    lookup = {_norm(k): v for k, v in tags.items() if v is not None}
+
+    def t(tag_text: str) -> str:
+        value = lookup.get(_norm(tag_text))
+        return str(value) if value is not None else f"[{tag_text}]"
 
     return {
         "t": t,

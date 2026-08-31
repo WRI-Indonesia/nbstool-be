@@ -46,7 +46,13 @@ try:
         sentences,
         tabulate_classes,
     )
-    from ...config import FLII_CLASS_RASTER, FLII_CLASSES, FLII_FOREST_RASTER
+    from ...common import RasterSlice, fmt_ha
+    from ...config import (
+        FLII_CLASS_RASTER,
+        FLII_CLASSES,
+        FLII_FOREST_RASTER,
+        FLII_NONFOREST_FLAG_PCT,
+    )
 except ImportError:  # `python forest_landscape_integrity.py`: no package around it
     import pathlib
     import sys
@@ -62,7 +68,13 @@ except ImportError:  # `python forest_landscape_integrity.py`: no package around
         sentences,
         tabulate_classes,
     )
-    from config import FLII_CLASS_RASTER, FLII_CLASSES, FLII_FOREST_RASTER
+    from common import RasterSlice, fmt_ha
+    from config import (
+        FLII_CLASS_RASTER,
+        FLII_CLASSES,
+        FLII_FOREST_RASTER,
+        FLII_NONFOREST_FLAG_PCT,
+    )
 
 FLII_LOW, FLII_MEDIUM, FLII_HIGH = 1, 2, 3
 
@@ -88,9 +100,8 @@ def _empty(reason: str) -> tuple[dict, dict]:
 
 def analyze_flii(aoi: AOI) -> tuple[dict, dict]:
     """Component 2.1. Forest landscape integrity over the AOI forest."""
-    # The FLII rasters are already masked to forest upstream, so their valid extent defines the
-    # forest here. forest_mask_2024 is loaded only to catch the "no forest at all" case early,
-    # so the message matches 1.5 and 1.6 rather than saying "no FLII data".
+    # forest_mask_2024 is loaded only to catch the "no forest at all" case early, so the message
+    # matches 1.5 and 1.6 rather than saying "no FLII data".
     if forest_mask_2024(aoi).is_empty:
         return _empty(
             "No forest is present in this project area, so landscape integrity cannot be "
@@ -98,15 +109,33 @@ def analyze_flii(aoi: AOI) -> tuple[dict, dict]:
         )
 
     score = load_raster_clipped(FLII_FOREST_RASTER, aoi, resampling="bilinear")
-    classes = load_raster_clipped(FLII_CLASS_RASTER, aoi, resampling="nearest")
+    classes = load_raster_clipped(FLII_CLASS_RASTER, aoi, resampling="nearest", like=score)
+
+    # The class raster IS the forest mask: its nodata is 0, so only forest cells are valid. The
+    # score raster is not. It keeps -9999 for nodata and writes non-forest as a real 0.0, so it
+    # spans the whole AOI. Averaging it as loaded would report an AOI mean next to a forest
+    # breakdown, two different populations on one card. Mask the score with the class raster so
+    # both describe the same cells. `like=` above is what makes the two masks comparable.
+    # Masking by value (score == 0) would be wrong: genuinely degraded forest also scores 0.
+    forest_only = np.ma.masked_array(
+        np.ma.getdata(score.values),
+        mask=np.ma.getmaskarray(score.values) | np.ma.getmaskarray(classes.values),
+    )
+    forest_score = RasterSlice(
+        values=forest_only,
+        pixel_area_ha=score.pixel_area_ha,
+        transform=score.transform,
+        crs=score.crs,
+    )
 
     forest_area_ha = classes.valid_area_ha
-    if forest_area_ha <= 0 or score.valid_count == 0:
+    if forest_area_ha <= 0 or forest_score.valid_count == 0:
         return _empty(
             "The forest integrity layer does not cover the forest in this project area."
         )
 
-    mean_flii = float(np.ma.mean(score.values))  # 0 to 10, one decimal on display
+    mean_flii = float(np.ma.mean(forest_score.values))   # 0 to 10, one decimal on display
+    mean_flii_aoi = float(np.ma.mean(score.values))      # diagnostic, whole score extent
 
     rows = tabulate_classes(classes, FLII_CLASSES, denominator_ha=forest_area_ha)
     by_code = {r.code: r for r in rows}
@@ -119,16 +148,28 @@ def analyze_flii(aoi: AOI) -> tuple[dict, dict]:
         f"The forest is predominantly {dom.label.lower()} integrity, {FLII_GLOSS[dom.code]}.",
     )
 
+    flags = []
+    nonforest_ha = score.valid_area_ha - forest_area_ha
+    if nonforest_ha > forest_area_ha * FLII_NONFOREST_FLAG_PCT / 100:
+        flags.append(
+            f"The FLII score raster carries {fmt_ha(nonforest_ha)} of non-forest inside this "
+            f"AOI, stored as 0. Those cells are excluded from the headline mean. Including "
+            f"them would give {mean_flii_aoi:.2f} instead of {mean_flii:.2f}."
+        )
+
     results = {
         'narrative': narrative,
         'tables': {'integrity': rows},
         'values': {
-            'mean_flii': mean_flii,          # headline big number
+            'mean_flii': mean_flii,          # headline big number, forest cells only
             'dominant_class': dom.code,
             'pct_high': by_code[FLII_HIGH].pct,
             'forest_area_ha': forest_area_ha,
+            # Diagnostics, not for display. Kept so the forest-only choice stays auditable.
+            'mean_flii_score_extent': mean_flii_aoi,
+            'score_extent_ha': score.valid_area_ha,
         },
-        'flags': [],
+        'flags': flags,
     }
 
     # The endpoint contract names the three shares individually rather than as a list, so the

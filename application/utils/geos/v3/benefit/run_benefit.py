@@ -1,6 +1,5 @@
 """
-run_benefit.py - the F02-P5 Benefit components (5.1-5.6, 5.8-5.13) behind one runner.
-Only 5.7 ecological connectivity remains unported (no notebook script yet).
+run_benefit.py - ALL the F02-P5 Benefit components (5.1-5.13) behind one runner.
 
 Each component returns the house `(results, view_results)` pair -- plain dicts, like site
 characterisation, threat and pathway. `view_results` is the flat card contract: `applicable`,
@@ -37,6 +36,7 @@ try:
     from .avoided_deforestation import analyze_avoided_deforestation_emissions
     from .arr_sequestration import analyze_arr_sequestration
     from .biodiversity_uplift import analyze_biodiversity_uplift
+    from .ecological_connectivity import analyze_ecological_connectivity
     from .climate_resilience import analyze_climate_resilience
     from .general_benefit import analyze_general_benefit
     from .habitat_loss_avoided import analyze_habitat_loss_avoided
@@ -57,6 +57,7 @@ except ImportError:  # `python run_benefit.py`: no package around it
     from avoided_deforestation import analyze_avoided_deforestation_emissions
     from biodiversity_uplift import analyze_biodiversity_uplift
     from climate_resilience import analyze_climate_resilience
+    from ecological_connectivity import analyze_ecological_connectivity
     from common import AOI, to_jsonable
     from microclimate import analyze_microclimate
     from config import (
@@ -130,6 +131,7 @@ _W = {
     'net_emission_reduction': 0.1,
     'net_carbon_removal': 0.1,
     'net_errs': 0.1,
+    'ecological_connectivity': 5.0,
     'watershed_protection': 3.0,
     'habitat_loss_avoided': 27.0,
     'threatened_species_habitat': 25.0,
@@ -284,6 +286,9 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
                             "gross ERRs to deduct from.")
         return net_errs(gross_er, gross_removal, leakage, uncertainty, buffer, duration_years)
 
+    def _connectivity(aoi: AOI) -> tuple[dict, dict]:
+        return analyze_ecological_connectivity(aoi, duration_years)
+
     def _watershed(aoi: AOI) -> tuple[dict, dict]:
         return analyze_watershed_protection(aoi)
 
@@ -312,6 +317,7 @@ def _components(duration_years: int, rate_pct, carbon_project: bool,
         'net_emission_reduction': (_net_er, ('avoided_emissions',)),
         'net_carbon_removal': (_net_removal, ('arr_sequestration',)),
         'net_errs': (_net_errs_c, ('avoided_emissions', 'arr_sequestration')),
+        'ecological_connectivity': (_connectivity, ()),
         'watershed_protection': (_watershed, ()),
         'habitat_loss_avoided': (_habitat, ()),
         'threatened_species_habitat': (_threatened, ()),

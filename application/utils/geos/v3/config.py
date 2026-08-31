@@ -451,6 +451,10 @@ FLII_FOREST_RASTER = "flii_v3.tif"          # continuous 0-10, forest-masked
 FLII_CLASS_RASTER  = "flii_class_v3.tif"    # 1=Low, 2=Medium, 3=High -- NOT PUBLISHED YET
 FLII_CLASSES = {1: "Low", 2: "Medium", 3: "High"}
 
+# Report the non-forest cells carried by the score raster once they pass this share of the
+# forest area. Purely a visibility threshold, it never changes the numbers. (Notebook 15d6841.)
+FLII_NONFOREST_FLAG_PCT = 5.0
+
 # Key Biodiversity Areas (2.2). World Database of KBAs (BirdLife / KBA Partnership). The notebook
 # reads SouthEast_Asia_KBA.shp; no v3 bucket object was published and the backend already holds
 # the layer, so this reads the GIS database. db.load_kba_intersecting renames `intname` back to
@@ -1134,7 +1138,41 @@ SOCIAL_LEVEL_SOURCES = {
 # Benefit quantification (F02-P5) -- constants copied verbatim from the notebook config
 # ---------------------------------------------------------------------------------------
 PROTECT_CODE = 1   # named because F02-P5 selects on it; the other codes are only tabulated
+MANAGE_CODE = 2    # named because 5.7 reports connectivity per pathway
 RESTORE_CODE = 3   # named because 5.3 selects Restore pixels on it
+
+# ---------------------------------------------------------------------------------------
+# Ecological connectivity (Benefit module 5.7) -- notebook commit 7114a57, block verbatim.
+# ---------------------------------------------------------------------------------------
+# MSPA output from GuidosToolbox, categorical: one structural class per forest pixel, run on the
+# 2024 forest-cover mask. The notebook's own file name; briefly uploaded as `lc_2024...` and
+# renamed to fc_ by the data team 2026-08-31 (verified: uint8, EPSG:4326, same grid as fc_2014,
+# values on the GuidosToolbox legend).
+MSPA_2024_RASTER = "fc_2024_mspa_4326_v2.tif"
+
+# MSPA class codes, GuidosToolbox standard 8-bit output, Intext = 1. Confirmed by Gema
+# (2026-07-29) from the GuidosToolbox class table. Each class has an external and an internal
+# (+100) value; the "in Edge" / "in Perforation" variants of loop and bridge are still connectors
+# and map to loop / bridge. Both Intext modes are listed so the map is robust. Connector = bridge
+# + loop; 5.7 flags any foreground code it finds that is not listed here.
+MSPA_CLASS_CODES = {
+    17: "core", 117: "core",
+    9: "islet", 109: "islet",
+    5: "perforation", 105: "perforation",
+    3: "edge", 103: "edge",
+    65: "loop", 165: "loop", 67: "loop", 167: "loop", 69: "loop", 169: "loop",
+    33: "bridge", 133: "bridge", 35: "bridge", 135: "bridge", 37: "bridge", 137: "bridge",
+    1: "branch", 101: "branch",
+}
+# Non-habitat values: background, core-opening, border-opening, no-data. Not flagged as unmapped.
+MSPA_BACKGROUND_CODES = frozenset({0, 100, 129, 220})
+MSPA_CONNECTOR_CLASSES = ("bridge", "loop")             # links between habitat blocks
+MSPA_CORE_CLASSES = ("core",)                           # the intact interior block
+MSPA_EDGE_CLASSES = ("edge",)
+MSPA_HABITAT_CLASSES = ("core", "perforation", "edge", "branch", "loop", "bridge", "islet")
+
+# Word used for each reference ecosystem in the connectivity narrative (pathway band 3).
+CONNECTIVITY_ECO_WORDS = {1: "forest", 2: "mangrove", 3: "peatland", 4: "savanna"}
 
 # Apply carbon risk assumption
 # User inputs the leakage, uncertainty, and buffer values in the GUI. The tool applies them to the

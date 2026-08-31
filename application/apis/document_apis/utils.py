@@ -74,3 +74,25 @@ def save_draft(session_id: str, cert_type: str, patch_form: dict, patch_user_inp
     db.session.flush()
     db.session.refresh(stored)
     return stored
+
+
+def generate_extra_tags(session_id: str) -> dict:
+    """Document metadata the backend knows at GENERATE time, keyed by exact template tag: the
+    project's own name, the generating user's organisation, today's date. Passed to the
+    generators as `extra_tags` -- the user_input channel cannot reach category-less tags like
+    [PROJECT TITTLE] (its merge prefixes bare keys with "User input: "). A user-typed
+    DD-Month-Year still wins over the default date; TITTLE is the template's own spelling."""
+    from datetime import datetime
+
+    from flask_login import current_user
+
+    from ...models.user_models.models import UserSessions
+
+    session = UserSessions.find_by_session_id(session_id)
+    tags = {'User input: DD-Month-Year': datetime.now().strftime('%d %B %Y')}
+    if session and session.project_name:
+        tags['PROJECT TITTLE'] = session.project_name
+    organisation = getattr(current_user, 'organization_name', None)
+    if organisation:
+        tags['Name of Organisation or Entity'] = organisation
+    return tags

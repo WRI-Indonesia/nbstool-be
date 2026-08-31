@@ -21,6 +21,11 @@ from ....utils.common import app_exception_handler, success_handler
 
 from .. import gcs
 
+# The real .docx MIME. These routes served 'application/msword' -- the legacy .doc type -- and
+# the extension/content-type mismatch is what made Word and browsers warn "not secure" /
+# protected view on every generated document.
+DOCX_MIMETYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
 
 # legacy: /nbsapi/front-service/download/docx-ccb [POST]
 @document_apis_blueprint.route('/download/docx-ccb', methods=['GET'])
@@ -39,7 +44,7 @@ def documents_get_document_download_docx_ccb():
         if not os.path.exists(document_path):
             raise AppMessageException('we are still generating your file, please wait a minute')
         
-        return send_file(document_path, mimetype='application/msword', as_attachment=True, download_name="Preliminary Assessment Document.docx")
+        return send_file(document_path, mimetype=DOCX_MIMETYPE, as_attachment=True, download_name="Preliminary Assessment Document.docx")
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:
@@ -127,7 +132,7 @@ def documents_get_document_download_docx():
         if not os.path.exists(document_path):
             raise AppMessageException('we are still generating your file, please wait a minute')
         
-        return send_file(document_path, mimetype='application/msword', as_attachment=True, download_name=client_name)
+        return send_file(document_path, mimetype=DOCX_MIMETYPE, as_attachment=True, download_name=client_name)
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

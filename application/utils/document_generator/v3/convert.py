@@ -18,9 +18,15 @@
 #      `{%tr for %}` loops (see LOOP_ROWS).
 #   3. `[only if X] ... [/only if X]` spans become `{% if %} ... {% endif %}`.
 #
-# Paragraphs containing a bracket are rewritten into their first run, so Word's run fragmentation
-# cannot split a tag; the paragraph keeps the first run's formatting. Placeholder highlighting is
-# lost by design -- it marks what this pipeline replaces.
+# Conversion is RUN-AWARE: only the runs a bracket actually spans are merged, so colored or
+# otherwise formatted text around a placeholder keeps its own runs and formatting, and the
+# replacement inherits the placeholder run's formatting (the first cut collapsed each bracketed
+# paragraph into its first run, which flattened every colour in it to run 1's -- doc team
+# noticed).
+#
+# The draft's own "Data Tag Reference" table (an authoring aid listing every tag) is DROPPED
+# from the generated template (team decision 2026-08-31), together with its heading paragraph.
+# It is removed BEFORE conversion, so occurrence numbering never sees its rows.
 
 from __future__ import annotations
 
@@ -110,8 +116,8 @@ def _to_jinja(text: str, counters: dict | None = None, occurrences: dict | None 
 def _rewrite_paragraph(paragraph, new_text: str) -> None:
     """Put `new_text` into the paragraph's first run and drop the rest.
 
-    Word splits a placeholder across runs at will; collapsing to one run is what guarantees a
-    jinja tag is never split. The paragraph keeps the first run's formatting.
+    Used where the WHOLE cell content is replaced (loop rows, injected control rows), so there
+    is no surrounding formatting to keep.
     """
     if not paragraph.runs:
         if new_text:
@@ -122,11 +128,58 @@ def _rewrite_paragraph(paragraph, new_text: str) -> None:
         run._element.getparent().remove(run._element)
 
 
+# One bracket token, [only if ...] and [/only if ...] included -- they are brackets too.
+_TOKEN = re.compile(r"\[[^\[\]]+\]")
+
+
+def _convert_paragraph(paragraph, counters=None, occurrences=None) -> None:
+    """Convert one paragraph's brackets RUN-AWARE.
+
+    Word splits a placeholder across runs at will, so each bracket's span of runs is merged into
+    the run where it starts -- which guarantees the jinja tag is never split AND that the
+    replacement keeps the placeholder run's own formatting. Runs outside a bracket are left
+    untouched, so surrounding coloured or styled text survives conversion. Left-to-right order
+    keeps the occurrence counters in document order.
+    """
+    scan_from = 0
+    while True:
+        runs = paragraph.runs
+        text = "".join(run.text or "" for run in runs)
+        match = _TOKEN.search(text, scan_from)
+        if not match:
+            return
+        replacement = _to_jinja(match.group(0), counters, occurrences)
+        start, end = match.span()
+        if replacement == match.group(0):
+            # An unknown [only if ...] condition stays literal by design; step past it.
+            scan_from = end
+            continue
+        scan_from = start + len(replacement)
+
+        bounds = []
+        position = 0
+        for run in runs:
+            length = len(run.text or "")
+            bounds.append((position, position + length))
+            position += length
+        first = next(i for i, (a, b) in enumerate(bounds) if a <= start < b)
+        last = next(i for i, (a, b) in enumerate(bounds) if a < end <= b)
+
+        prefix = (runs[first].text or "")[:start - bounds[first][0]]
+        suffix = (runs[last].text or "")[end - bounds[last][0]:]
+        if first == last:
+            runs[first].text = prefix + replacement + suffix
+        else:
+            runs[first].text = prefix + replacement
+            runs[last].text = suffix
+            for run in runs[first + 1:last]:
+                run.text = ""
+
+
 def _convert_paragraphs(paragraphs, counters=None, occurrences=None) -> None:
     for paragraph in paragraphs:
-        text = paragraph.text
-        if "[" in text or "]" in text:
-            _rewrite_paragraph(paragraph, _to_jinja(text, counters, occurrences))
+        if "[" in paragraph.text or "]" in paragraph.text:
+            _convert_paragraph(paragraph, counters, occurrences)
 
 
 def _iter_cell_paragraphs(table):
@@ -144,6 +197,28 @@ def _iter_cell_paragraphs(table):
 
 
 _NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+REFERENCE_TABLE_HEADER = "DATA TAG"
+REFERENCE_HEADING = "Data Tag Reference"
+
+
+def _drop_reference_table(doc) -> bool:
+    """Delete the draft's Data Tag Reference table and its heading paragraph.
+
+    The table is the doc team's authoring aid (every tag, its source, where it appears), not
+    document content -- team decision 2026-08-31. Must run BEFORE conversion: with it gone,
+    occurrence numbering starts at the first REAL use of a tag, which is what the
+    FEASIBILITY_OCCURRENCES rules assume.
+    """
+    dropped = False
+    for table in list(doc.tables):
+        if table.rows and REFERENCE_TABLE_HEADER in table.rows[0].cells[0].text.upper():
+            table._tbl.getparent().remove(table._tbl)
+            dropped = True
+    for paragraph in list(doc.paragraphs):
+        if REFERENCE_HEADING.lower() in paragraph.text.lower():
+            paragraph._element.getparent().remove(paragraph._element)
+    return dropped
 
 
 def _control_row(template_row):
@@ -232,19 +307,16 @@ def _chosen_activities(n):
 
 # The feasibility template repeats `[Potential Benefit: X tonnes]` in avoided/sequestered pairs
 # ("X tonnes avoided ... X tonnes sequestered", twice: Net Carbon Removal Estimates and Technical
-# Feasibility). Occurrence 1 is the tag's own row in the draft's Data Tag Reference table and
-# stays generic; after it, even occurrences are the avoided figure and odd ones the sequestered
-# figure. Re-derive if the doc team drops the reference table from the draft.
+# Feasibility). The Data Tag Reference table -- whose row used to be occurrence 1 -- is dropped
+# before conversion, so numbering starts at the first real pair: odd occurrences are the avoided
+# figure and even ones the sequestered figure.
 FEASIBILITY_OCCURRENCES = {
     "Potential Benefit: X tonnes": lambda n: (
-        None if n == 1
-        else "benefit_avoided_tco2e" if n % 2 == 0 else "benefit_sequestered_tco2e"),
-    # "x Nature sub-components, x People sub-components and x Climate sub-components scored" --
-    # occurrence 1 is again the tag's row in the Data Tag Reference table.
+        "benefit_avoided_tco2e" if n % 2 == 1 else "benefit_sequestered_tco2e"),
+    # "x Nature sub-components, x People sub-components and x Climate sub-components scored".
     "Potential Benefit: x": lambda n: (
-        None if n == 1
-        else ("benefit_nature_count", "benefit_people_count",
-              "benefit_climate_count")[(n - 2) % 3]),
+        ("benefit_nature_count", "benefit_people_count",
+         "benefit_climate_count")[(n - 1) % 3]),
 }
 
 MONITORING_OCCURRENCES = {
@@ -300,6 +372,9 @@ def _inject_indicator_rows(doc) -> int:
 def convert(source_path: str, output_path: str, occurrences: dict | None = None) -> None:
     doc = Document(source_path)
     counters: dict = {}
+
+    # Before anything counts occurrences: the authoring aid is not document content.
+    _drop_reference_table(doc)
 
     # Body content in DOCUMENT ORDER -- occurrence counting depends on it. Loop rows are wrapped
     # before a table's paragraphs are converted, so the loop cells get their own expressions.

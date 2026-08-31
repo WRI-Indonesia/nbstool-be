@@ -1413,7 +1413,10 @@ paths:
             the user specifies them), then
             `general_benefit` (5.1), `watershed_protection` (5.8, narrative
             + area per ecosystem present -- the simplified beta method),
-            `avoided_emissions` (5.2), `net_emission_reduction` (5.4),
+            `ecological_connectivity` (5.7, MSPA structural classes: one
+            story per pathway -- Protect intact block + corridor share,
+            Manage connector/edge habitat, Restore patch count -- plus the
+            `mspa_classes` row list), `avoided_emissions` (5.2), `net_emission_reduction` (5.4),
             `microclimate` (5.13), `arr_sequestration` (5.3),
             `climate_resilience` (5.12), `net_carbon_removal` (5.5),
             `net_errs` (5.6), `threatened_species_habitat` (5.10),
@@ -1445,8 +1448,7 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
-        F02-P5 components 5.1-5.6 and 5.8-5.13, STREAMED (only 5.7
-        ecological connectivity has no notebook script yet).
+        ALL F02-P5 components (5.1-5.13), STREAMED.
 
         THE PATHWAY SCREEN'S "Calculate potential benefit" BUTTON CALLS THIS.
         The JSON body carries the screen's state: `duration_years` (the
