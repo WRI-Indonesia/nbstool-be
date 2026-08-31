@@ -66,6 +66,7 @@ def analyze_historical_deforestation(aoi: AOI) -> tuple[dict, dict]:
             'historical_deforestation_year_start': DEFOR_YEAR_START,
             'historical_deforestation_year_end': DEFOR_YEAR_END,
             'historical_deforestation_percentage': None,
+            'historical_deforestation_total_area': 0.0,
         }
         return results, view_results
 
@@ -114,6 +115,8 @@ def analyze_historical_deforestation(aoi: AOI) -> tuple[dict, dict]:
         # `values` is the other reading of "percentage" - the total share lost across the ten
         # years - if the card means that instead.
         'historical_deforestation_percentage': rate_pct,
+        # Total forest loss over the period, in hectares -- the figure the narrative quotes.
+        'historical_deforestation_total_area': loss_ha,
     }
 
     return results, view_results

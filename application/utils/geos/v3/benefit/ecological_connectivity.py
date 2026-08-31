@@ -231,12 +231,14 @@ def analyze_ecological_connectivity(aoi: AOI, duration_years: int) -> tuple[dict
         'flags': [],
         'notes': notes,
     }
-    # The card contract: the per-pathway stories with their headline figures, and the MSPA split.
+    # The card contract: the per-pathway figures with their sentences, and the MSPA split. The
+    # `narratives` dict is NOT on the wire (team call 2026-09-01) -- it only duplicated the
+    # sentence each pathway sub-dict already carries.
     view_results = {
         'applicable': True,
         'narrative': narrative,
         **{k: values[k] for k in (
-            'narratives', 'pathways_reported', 'habitat_ha_total', 'core_ha_total',
+            'pathways_reported', 'habitat_ha_total', 'core_ha_total',
             'connector_ha_total', 'mspa_year')},
         **{k: values[k] for k in ('protect', 'manage', 'restore') if k in values},
         'mspa_classes': class_rows,

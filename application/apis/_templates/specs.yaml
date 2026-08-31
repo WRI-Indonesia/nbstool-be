@@ -1413,9 +1413,10 @@ paths:
             the user specifies them), then
             `general_benefit` (5.1), `watershed_protection` (5.8, narrative
             + area per ecosystem present -- the simplified beta method),
-            `ecological_connectivity` (5.7, MSPA structural classes: one
-            story per pathway -- Protect intact block + corridor share,
-            Manage connector/edge habitat, Restore patch count -- plus the
+            `ecological_connectivity` (5.7, per-pathway sub-dicts --
+            Protect `block_ha` + `corridor_ha`/`_pct`, Manage
+            `connector_edge_ha`, Restore `patch_count`, each with its own
+            sentence -- plus habitat/core/connector totals and the
             `mspa_classes` row list), `avoided_emissions` (5.2), `net_emission_reduction` (5.4),
             `microclimate` (5.13), `arr_sequestration` (5.3),
             `climate_resilience` (5.12), `net_carbon_removal` (5.5),
