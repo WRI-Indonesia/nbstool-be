@@ -95,16 +95,18 @@ def _admin_units(gdf, aoi: AOI, group_cols: list[str], name_field: str,
     return sort_by_area(kept)
 
 
-def _ancestors(gdf) -> dict[tuple[str, str], tuple[str, str]]:
-    """(district, sub-district) -> (province, country), for the overlap table.
+def _ancestors(gdf, parent_col: str, child_col: str,
+               ancestor_cols: list[str]) -> dict[tuple[str, str], tuple[str, ...]]:
+    """(parent, child) -> the ancestor names above the parent, for the overlap table.
 
-    An AdminUnit carries one parent, so a sub-district knows its district but not its province
-    or country. Keying on the pair keeps same-named sub-districts in different districts apart.
+    An AdminUnit carries one parent, so a listed unit knows its parent but nothing above it.
+    Keying on the pair keeps same-named units in different parents apart.
     """
-    if "NAME_3" not in gdf.columns:
+    if child_col not in gdf.columns:
         return {}
     return {
-        (str(row["NAME_2"]), str(row["NAME_3"])): (str(row["NAME_1"]), str(row["COUNTRY"]))
+        (str(row[parent_col]), str(row[child_col])):
+            tuple(str(row[c]) for c in ancestor_cols)
         for _, row in gdf.iterrows()
     }
 
@@ -174,12 +176,19 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         else ""
     )
 
-    # Levels 3 and 4 chain the same way: the largest inside the dominant parent.
-    dominant_subdistrict = next(
-        (u.name for u in subdistricts if main and u.parent == main.name), None)
-    dominant_village = next(
-        (u.name for u in villages if dominant_subdistrict and u.parent == dominant_subdistrict),
-        None)
+    # Levels 3 and 4 chain the same way: the largest inside the dominant parent. The units are
+    # kept, not just their names, because the card quotes the dominant unit's overlap area.
+    main_subdistrict = next(
+        (u for u in subdistricts if main and u.parent == main.name), None)
+    main_village = next(
+        (u for u in villages if main_subdistrict and u.parent == main_subdistrict.name), None)
+    dominant_subdistrict = main_subdistrict.name if main_subdistrict else None
+    dominant_village = main_village.name if main_village else None
+
+    # The dominant administration's own overlap with the AOI: the deepest unit the chain named,
+    # so it matches the most specific name on the card.
+    dominant_unit = (
+        main_village or main_subdistrict or main or (in_country[0] if in_country else None))
 
     if len(provinces) > 1:
         flags.append(
@@ -210,6 +219,7 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
             'dominant_district': main.name if main else None,
             'dominant_subdistrict': dominant_subdistrict,
             'dominant_village': dominant_village,
+            'dominant_area_ha': dominant_unit.area_ha if dominant_unit else None,
             'transboundary': len(countries) > 1,
             'provinces': [u.name for u in provinces],
         },
@@ -217,17 +227,37 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         'missing': missing,
     }
 
-    # The overlap table is listed at the deepest level the source carries, so an Indonesian AOI
-    # names its sub-districts and everything else still names districts. `_ancestors` recovers the
-    # ancestry of a sub-district, which AdminUnit cannot hold: it carries one parent. Each row
-    # names its own country, because on a transboundary AOI a listed unit can sit in a different
-    # country than the dominant one.
-    if subdistricts:
-        ancestors = _ancestors(gdf)
+    # The overlap table is listed at the deepest level the source carries: villages for
+    # Indonesia, districts elsewhere. `_ancestors` recovers the levels above a unit's parent,
+    # which AdminUnit cannot hold: it carries one parent. Each row names its own country,
+    # because on a transboundary AOI a listed unit can sit in a different country than the
+    # dominant one. The dominant unit at the table's own depth is skipped: the card's top-level
+    # fields already carry the whole dominant chain, so its row would be redundant.
+    if villages:
+        ancestors = _ancestors(gdf, "NAME_3", "NAME_4", ["NAME_2", "NAME_1", "COUNTRY"])
+        overlapping = []
+        for unit in villages:
+            if unit == main_village:
+                continue
+            district, province, country = ancestors.get(
+                (unit.parent, unit.name), (None, None, None))
+            overlapping.append({
+                'village': unit.name,
+                'subdistrict': unit.parent,
+                'district': district,
+                'province': province,
+                'country': country,
+                'area': unit.area_ha,
+            })
+    elif subdistricts:
+        ancestors = _ancestors(gdf, "NAME_2", "NAME_3", ["NAME_1", "COUNTRY"])
         overlapping = []
         for unit in subdistricts:
+            if unit == main_subdistrict:
+                continue
             province, country = ancestors.get((unit.parent, unit.name), (None, None))
             overlapping.append({
+                'village': None,
                 'subdistrict': unit.name,
                 'district': unit.parent,
                 'province': province,
@@ -238,6 +268,7 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         province_country = {u.name: u.parent for u in provinces}
         overlapping = [
             {
+                'village': None,
                 'subdistrict': None,
                 'district': unit.name,
                 'province': unit.parent,
@@ -245,12 +276,13 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
                 'area': unit.area_ha,
             }
             for unit in districts
+            if unit != main
         ]
 
     view_results = {
         # Dominant L4 (desa). Indonesia only today -- null wherever the source has no village
-        # level. The overlap table below stays at sub-district depth on purpose: an AOI can touch
-        # hundreds of villages, and the card's table is not the place to list them.
+        # level. The overlap table above goes to the same depth; the 1% sliver threshold keeps
+        # it from listing every village a large AOI touches.
         'village': results['values']['dominant_village'],
         'subdistrict': results['values']['dominant_subdistrict'],
         'district': results['values']['dominant_district'],
@@ -258,6 +290,9 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
         # Dominant L0. Was values-only; promoted so report templates and stored results carry the
         # country without a second lookup.
         'country': results['values']['dominant_country'],
+        # Overlap of the deepest dominant unit named above, not the whole AOI: the two differ
+        # whenever the AOI spills past that unit's boundary.
+        'area': results['values']['dominant_area_ha'],
         'overlapping_administration': overlapping,
     }
 
