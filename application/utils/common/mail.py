@@ -24,8 +24,16 @@ class BaseMail():
             current_app.logger.info('utils common mail: {}'.format(str(e)))
             raise Exception('utils common mail: fe url invalid or not found')
 
+        FE_URL_V3 = Settings.find_by_name('FE_URL_V3')
+        try:
+            FE_URL_V3 = FE_URL_V3.value
+        except Exception as e:
+            current_app.logger.info('utils common mail: FE_URL_V3 not set, falling back to FE_URL: {}'.format(str(e)))
+            FE_URL_V3 = FE_URL
+
         self.data = {
-            'fe_url': FE_URL
+            'fe_url': FE_URL,
+            'fe_url_v3': FE_URL_V3
         }
         self.data.update(data)
     
