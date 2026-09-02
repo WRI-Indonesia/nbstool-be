@@ -95,16 +95,16 @@ def _admin_units(gdf, aoi: AOI, group_cols: list[str], name_field: str,
     return sort_by_area(kept)
 
 
-def _ancestors(gdf) -> dict[tuple[str, str], str]:
-    """(district, sub-district) -> province, for the overlap table.
+def _ancestors(gdf) -> dict[tuple[str, str], tuple[str, str]]:
+    """(district, sub-district) -> (province, country), for the overlap table.
 
-    An AdminUnit carries one parent, so a sub-district knows its district but not its province.
-    Keying on the pair keeps same-named sub-districts in different districts apart.
+    An AdminUnit carries one parent, so a sub-district knows its district but not its province
+    or country. Keying on the pair keeps same-named sub-districts in different districts apart.
     """
     if "NAME_3" not in gdf.columns:
         return {}
     return {
-        (str(row["NAME_2"]), str(row["NAME_3"])): str(row["NAME_1"])
+        (str(row["NAME_2"]), str(row["NAME_3"])): (str(row["NAME_1"]), str(row["COUNTRY"]))
         for _, row in gdf.iterrows()
     }
 
@@ -219,24 +219,29 @@ def analyze_admin_boundaries(aoi: AOI) -> tuple[dict, dict]:
 
     # The overlap table is listed at the deepest level the source carries, so an Indonesian AOI
     # names its sub-districts and everything else still names districts. `_ancestors` recovers the
-    # district and province of a sub-district, which AdminUnit cannot hold: it carries one parent.
+    # ancestry of a sub-district, which AdminUnit cannot hold: it carries one parent. Each row
+    # names its own country, because on a transboundary AOI a listed unit can sit in a different
+    # country than the dominant one.
     if subdistricts:
         ancestors = _ancestors(gdf)
-        overlapping = [
-            {
+        overlapping = []
+        for unit in subdistricts:
+            province, country = ancestors.get((unit.parent, unit.name), (None, None))
+            overlapping.append({
                 'subdistrict': unit.name,
                 'district': unit.parent,
-                'province': ancestors.get((unit.parent, unit.name)),
+                'province': province,
+                'country': country,
                 'area': unit.area_ha,
-            }
-            for unit in subdistricts
-        ]
+            })
     else:
+        province_country = {u.name: u.parent for u in provinces}
         overlapping = [
             {
                 'subdistrict': None,
                 'district': unit.name,
                 'province': unit.parent,
+                'country': province_country.get(unit.parent),
                 'area': unit.area_ha,
             }
             for unit in districts
