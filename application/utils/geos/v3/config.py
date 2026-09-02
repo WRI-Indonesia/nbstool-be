@@ -486,7 +486,7 @@ NATUREMAP_MIN_PIXELS = 20
 # carried over -- see db.load_key_species_intersecting.
 # COVERAGE: Aves, Mammalia and Reptilia only. There are NO Amphibia rows, so
 # `amphibian_number_of_species` is a true zero from this source, not a missing value.
-KEY_SPECIES_TABLE = "sea.key_species"
+KEY_SPECIES_TABLE = "sea.key_species_v3"
 # Darwin Core class -> the endpoint's four species-count fields.
 KEY_SPECIES_CLASS_FIELDS = {
     "Aves": "bird_number_of_species",
