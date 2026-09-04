@@ -238,7 +238,7 @@ def projects_list():
         if not known_organization:
             known_organization = Organization()
 
-        known_project_list = UserSessions.query.filter_by(user_id=current_user.id, is_active=1, is_project=True).order_by(db.desc(UserSessions.created_at))
+        known_project_list = UserSessions.query.filter_by(user_id=current_user.id, is_active=1, is_project=True).filter(UserSessions.analyzer_version.is_(None)).order_by(db.desc(UserSessions.created_at))
 
         items = []
         for project in known_project_list:

@@ -1224,7 +1224,7 @@ paths:
     get:
       tags:
         - Project module
-      summary: list projects
+      summary: list projects (legacy v2 analyses only)
       security:
         - Authorization: []
       responses:

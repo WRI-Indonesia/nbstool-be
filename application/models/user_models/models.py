@@ -188,6 +188,7 @@ class UserSessions(db.Model):
     project_name = db.Column(db.String(100), nullable = True)
 
     is_project = db.Column(db.Boolean, default=False)
+    analyzer_version = db.Column(db.String(10), nullable=True)  # NULL = legacy/v2, 'v3' = v3 engine
 
     updated_at = db.Column(db.DateTime, onupdate=get_date)
     updated_by = db.Column(db.Integer, default=0)
