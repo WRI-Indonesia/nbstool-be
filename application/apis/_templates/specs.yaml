@@ -1671,11 +1671,14 @@ paths:
           $ref: "#/components/responses/Bad Request"
         "401":
           $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters:
         - $ref: "#/components/parameters/project_id"
-      description: get detailed information for a specific project
+      description: get detailed information for a specific project, only the user who
+        created the project can access it
       operationId: getProjectDetails
     post:
       tags:
@@ -4229,6 +4232,13 @@ components:
             $ref: "#/components/schemas/FailedResponse"
       description: The server could not understand the request due to invalid syntax.
         The client should modify the request and try again.
+    Forbidden:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FailedResponse"
+      description: The authenticated user does not have access to the requested
+        resource.
     Internal Server Error:
       content:
         application/json:

@@ -434,6 +434,8 @@ def projects_details():
         known_project = UserSessions.find_by_session_id(session_id)
         if not known_project:
             raise AppMessageException('fail, project Not found')
+        if known_project.user_id != current_user.id:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can view this project', 403)), 403)
         analyzer = DataAnalyzer.find_by_session_id(session_id)
         site = (analyzer.site_information_json if analyzer else None) or {}
         benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
