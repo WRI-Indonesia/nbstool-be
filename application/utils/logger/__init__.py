@@ -86,16 +86,51 @@ def logging(response):
         'json_response': True
     }
 
-    try:
-        resp_data['data'] = response.get_json()
-    except Exception as e:
-        current_app.logger.warning('{} - after_request - logger (get_json): {}'.format(str(g_var.get('__api_name__')), str(e)))
+    if response.is_streamed:
+        # Reading a streamed body here would buffer the whole run inside after_request,
+        # BEFORE the client gets a single byte. Log the opening only; the run's outcome
+        # is written from inside the generator via log_stream_event.
         resp_data['json_response'] = False
-        resp_data['data'] = {
-            'message': 'error get response json: {}'.format(str(e)),
-            'text': str(response.data)
-        }
-    
+        resp_data['data'] = {'message': 'streamed response opened'}
+    else:
+        try:
+            resp_data['data'] = response.get_json()
+        except Exception as e:
+            current_app.logger.warning('{} - after_request - logger (get_json): {}'.format(str(g_var.get('__api_name__')), str(e)))
+            resp_data['json_response'] = False
+            resp_data['data'] = {
+                'message': 'error get response json: {}'.format(str(e)),
+                'text': str(response.data)
+            }
+
     log_func(session, resp_data)
-    
+
     session.remove()
+
+
+def log_stream_event(data: dict, failed: bool = False):
+    '''
+    one tbl_logger_logs row for a streamed run's lifecycle (start / end / aborted), written
+    from inside the generator -- after_request runs before a stream is consumed, so it can
+    never see how the run turned out.
+
+    needs the same g context the after_request path uses (g.__api_name__, g.__session_id__,
+    g.__request_data__), which stream_with_context keeps alive during generation. no row
+    without a session_id. a write failure is logged and swallowed: the response is
+    already 200.
+    '''
+    if not g_var.get('__session_id__'):
+        return
+
+    session = scoped_session(sessionmaker(autocommit=False, bind=db.engine))
+    try:
+        g_var.log_type_code = 'LOG_FAILED' if failed else 'LOG_SUCCESS'
+        log_func(session, {
+            'status_code': 200,
+            'json_response': True,
+            'data': data,
+        })
+    except Exception as e:
+        current_app.logger.warning('{} - log_stream_event: {}'.format(str(g_var.get('__api_name__')), str(e)))
+    finally:
+        session.remove()

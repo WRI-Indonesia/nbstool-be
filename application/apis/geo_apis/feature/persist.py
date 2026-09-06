@@ -21,6 +21,7 @@ from .... import db
 from ....models.geos_models.models import DataAnalyzer
 from ....models.user_models.models import UserSessions
 from ....utils.common import sanitize_for_jsonb
+from ....utils.logger import log_stream_event
 from ....utils.geos.v3.site_characterisation.climate.run_climate import processes as climate_processes
 from ....utils.geos.v3.site_characterisation.general.run_general import processes as general_processes
 from ....utils.geos.v3.site_characterisation.nature.run_nature import processes as nature_processes
@@ -96,20 +97,46 @@ def persist_ndjson(lines, session_id: str, spec_for):
     A crashed component (`data: {}`) is skipped, so it never wipes a stored value. Saving only at
     `end` means a dropped connection persists nothing, which is what its retry expects. A save
     failure is logged and swallowed: the stream is already 200 and the analysis itself succeeded.
+
+    The run's lifecycle also lands in tbl_logger_logs (log_stream_event): a `start` row when the
+    stream begins producing (i.e. after the slot queue), and an `end` row carrying every non-null
+    `error_status` keyed by process. A run that never reaches `end` -- client disconnect, an
+    exception in a runner, error_test=stream -- writes an `aborted` row from the finally block;
+    an OOM-killed worker writes nothing, so its signature is a `start` row with no closing row.
     """
     updates: dict = {}
-    for line in lines:
-        payload = json.loads(line)
-        process, data = payload['process'], payload['data']
-        if process == 'end':
-            try:
-                save_v3_sections(session_id, updates)
-            except Exception:
-                db.session.rollback()
-                logger.exception('failed to persist v3 results for session %s', session_id)
-        elif process != 'preparation' and data:
-            spec = spec_for(process)
-            if spec:
-                column, nested = spec
-                updates[column] = _merge(updates.get(column), {process: data} if nested else data)
-        yield line
+    statuses: dict = {}
+    emitted = 0
+    ended = False
+    log_stream_event({'stream_run': 'start'})
+    try:
+        for line in lines:
+            payload = json.loads(line)
+            process, data = payload['process'], payload['data']
+            if payload.get('error_status'):
+                statuses[process] = payload['error_status']
+            if process == 'end':
+                ended = True
+                try:
+                    save_v3_sections(session_id, updates)
+                except Exception:
+                    db.session.rollback()
+                    logger.exception('failed to persist v3 results for session %s', session_id)
+                log_stream_event(
+                    {'stream_run': 'end', 'components_emitted': emitted,
+                     'error_status': statuses or None},
+                    failed=bool(statuses))
+            elif process != 'preparation':
+                emitted += 1
+                if data:
+                    spec = spec_for(process)
+                    if spec:
+                        column, nested = spec
+                        updates[column] = _merge(updates.get(column), {process: data} if nested else data)
+            yield line
+    finally:
+        if not ended:
+            log_stream_event(
+                {'stream_run': 'aborted', 'components_emitted': emitted,
+                 'error_status': statuses or None},
+                failed=True)

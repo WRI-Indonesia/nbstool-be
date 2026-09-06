@@ -290,8 +290,15 @@ def _error_test_overlay(gen, retry_url):
 def geo_feature_site_characterisation():
     g_var.__api_name__ = 'geo_feature_site_characterisation'
 
+    # tbl_logger_logs: the pre-stream 400/500s land via after_request; the run itself via
+    # persist_ndjson's start/end/aborted rows. flat=False keeps repeated ?process= values.
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__request_data__ = request.args.to_dict(flat=False)
+
     try:
         session_id = request.args.get('session_id')
+        g_var.__session_id__ = session_id
 
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
 
@@ -372,8 +379,14 @@ def geo_feature_site_characterisation():
 def geo_feature_analysis():
     g_var.__api_name__ = 'geo_feature_analysis'
 
+    # tbl_logger_logs, same contract as site-characterisation
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__request_data__ = request.args.to_dict(flat=False)
+
     try:
         session_id = request.args.get('session_id')
+        g_var.__session_id__ = session_id
 
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
 
@@ -428,8 +441,14 @@ def geo_feature_analysis():
 def geo_feature_threat():
     g_var.__api_name__ = 'geo_feature_threat'
 
+    # tbl_logger_logs, same contract as site-characterisation
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__request_data__ = request.args.to_dict(flat=False)
+
     try:
         session_id = request.args.get('session_id')
+        g_var.__session_id__ = session_id
 
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
 
@@ -492,8 +511,14 @@ def geo_feature_threat():
 def geo_feature_pathway():
     g_var.__api_name__ = 'geo_feature_pathway'
 
+    # tbl_logger_logs: plain JSON response, so after_request logs the full outcome here
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__request_data__ = request.args.to_dict(flat=False)
+
     try:
         session_id = request.args.get('session_id')
+        g_var.__session_id__ = session_id
 
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
 
@@ -537,15 +562,21 @@ def geo_feature_pathway():
 def geo_feature_benefit_v3():
     g_var.__api_name__ = 'geo_feature_benefit_v3'
 
+    # tbl_logger_logs: pre-stream 400/500s via after_request, the run via persist_ndjson rows
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+
     try:
         if not request.is_json:
             raise AppMessageException('please provide json data')
         payload = request.get_json()
+        g_var.__request_data__ = payload
 
         def param(name, default=None):
             return payload.get(name, default)
 
         session_id = param('session_id')
+        g_var.__session_id__ = session_id
 
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
 
@@ -637,12 +668,18 @@ def geo_feature_benefit_v3():
 def geo_feature_benefit_people():
     g_var.__api_name__ = 'geo_feature_benefit_people'
 
+    # tbl_logger_logs: plain JSON response, so after_request logs the full outcome here
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+
     try:
         if not request.is_json:
             raise AppMessageException('please provide json data')
         payload = request.get_json()
+        g_var.__request_data__ = payload
 
         session_id = payload.get('session_id')
+        g_var.__session_id__ = session_id
         known_polygons = Polygons.query.filter_by(session_id=session_id).first()
         if not known_polygons:
             raise AppMessageException('fail, session id Not found')
