@@ -122,10 +122,13 @@ def persist_ndjson(lines, session_id: str, spec_for):
                 except Exception:
                     db.session.rollback()
                     logger.exception('failed to persist v3 results for session %s', session_id)
+                # LOG_FAILED only on a `partial` (a crash -- retryable): `failed` states
+                # are legitimate final answers (data gaps), and flagging those would mark
+                # most edge-area runs failed forever.
                 log_stream_event(
                     {'stream_run': 'end', 'components_emitted': emitted,
                      'error_status': statuses or None},
-                    failed=bool(statuses))
+                    failed=any(s.get('state') == 'partial' for s in statuses.values()))
             elif process != 'preparation':
                 emitted += 1
                 if data:
