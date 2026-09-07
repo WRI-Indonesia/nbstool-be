@@ -85,6 +85,38 @@ steps:
         "
       done
 
+# Metrics configuration: every *.sh under gs://<bucket>/metrics-configuration/
+# runs on each MIG VM (as root, alphabetical order) after the swap. Scripts
+# travel base64-inside the SSH command — stdin is unreliable (gcloud prompts).
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  id: metrics
+  entrypoint: bash
+  secretEnv: ['PRODUCTION_GCS_BUCKET_NAME']
+  args:
+    - '-c'
+    - |
+      set -euo pipefail
+
+      mkdir -p /workspace/metrics
+      if ! gsutil -m cp "gs://$$PRODUCTION_GCS_BUCKET_NAME/metrics-configuration/*.sh" /workspace/metrics/; then
+        echo "no metrics-configuration/*.sh in bucket — nothing to run"
+        exit 0
+      fi
+      echo "metrics scripts: $$(ls /workspace/metrics)"
+
+      VMS=$(gcloud compute instance-groups managed list-instances ${_MIG_NAME} --zone=${_ZONE} --format="value(instance.basename())")
+
+      for VM in $$VMS; do
+        for SCRIPT in /workspace/metrics/*.sh; do
+          NAME=$$(basename "$$SCRIPT")
+          B64=$$(base64 -w0 "$$SCRIPT")
+          echo ">>> running $$NAME on $$VM"
+          gcloud compute ssh "cloudbuild@$$VM" --zone=${_ZONE} --tunnel-through-iap --quiet \
+            --ssh-key-expire-after=30m \
+            --command="echo $$B64 | base64 -d | sudo bash -s"
+        done
+      done
+
 availableSecrets:
   secretManager:
   - versionName: projects/$PROJECT_NUMBER/secrets/PRODUCTION_SECRET_KEY/versions/latest
