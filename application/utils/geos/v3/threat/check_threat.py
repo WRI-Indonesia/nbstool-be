@@ -2,8 +2,8 @@
 
 The four analysis bodies are the notebook's and are verified by diffing against it. What is NOT in
 the notebook is the shaping: flattening its nested `{area_ha, percentage}` blocks into card fields,
-splitting Other out of the Overview, reporting an absent ecosystem as `failed` rather than as a
-healthy row of zeros, and the envelope itself. That is what this checks, on stub sections, so it
+the stable wire ids on the Overview cards (Other included since notebook a0c3b14), reporting an
+absent ecosystem as `failed` rather than as a healthy row of zeros, and the envelope itself. That is what this checks, on stub sections, so it
 runs in a second with no bucket and no database.
 
     python check_threat.py            stub checks only
@@ -51,12 +51,14 @@ OVERVIEW_RAW = {
     "total_disturbed_area_ha": 200.0,
     "total_disturbed_percentage": 25.0,
     "ecosystems": {
-        "Dryland": {"area_ha": 400.0, "percentage_total": 50.0,
-                    "disturbed_area_ha": 120.0, "disturbed_percentage": 30.0},
+        "Other": {"area_ha": 80.0, "percentage_total": 10.0,
+                  "disturbed_area_ha": 0.0, "disturbed_percentage": 0.0},
+        "Dryland forest": {"area_ha": 400.0, "percentage_total": 50.0,
+                           "disturbed_area_ha": 120.0, "disturbed_percentage": 30.0},
         "Mangrove": {"area_ha": 200.0, "percentage_total": 25.0,
                      "disturbed_area_ha": 50.0, "disturbed_percentage": 25.0},
-        "Peatland": {"area_ha": 200.0, "percentage_total": 25.0,
-                     "disturbed_area_ha": 30.0, "disturbed_percentage": 15.0},
+        "Peatland": {"area_ha": 120.0, "percentage_total": 15.0,
+                     "disturbed_area_ha": 30.0, "disturbed_percentage": 25.0},
     },
 }
 DRYLAND_RAW = {
@@ -92,16 +94,15 @@ aoi = FakeAOI()
 
 print("== the Overview tab")
 _res, ov = R._overview(aoi)
-check("three cards, always Dryland / Mangrove / Peatland",
-      [c["ecosystem"] for c in ov["ecosystems"]] == ["Dryland", "Mangrove", "Peatland"])
-check("three classes only -- no Other card and no Other field",
-      len(ov["ecosystems"]) == 3 and "other_area_ha" not in ov)
-check("the three cards sum to exactly 100 of the ecosystem area",
+check("four cards, always Dryland / Mangrove / Peatland / Other (notebook a0c3b14)",
+      [c["ecosystem"] for c in ov["ecosystems"]] == ["Dryland", "Mangrove", "Peatland", "Other"])
+check("the four cards sum to exactly 100 of the ecosystem area",
       sum(c["percentage_total"] for c in ov["ecosystems"]) == 100.0)
-check("analysis key is the layer's label, card prints the design's",
-      THREAT_ECOSYSTEM_CLASSES[1] == "Dryland"
+check("analysis key is the class label, card keeps the stable wire id",
+      THREAT_ECOSYSTEM_CLASSES[1] == "Dryland forest"
       and ov["ecosystems"][0]["ecosystem"] == "Dryland"
-      and ov["ecosystems"][0]["label"] == "Dryland forest")
+      and ov["ecosystems"][0]["label"] == "Dryland forest"
+      and ov["ecosystems"][3]["label"] == "Other")
 check("3.1's own disturbed figures never reach the wire -- they use a different mask",
       all("disturbed_area_ha" not in c for c in ov["ecosystems"])
       and "total_disturbed_area_ha" not in ov)

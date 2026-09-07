@@ -1092,15 +1092,15 @@ paths:
             `error_status.retry_url` ready to request.
       description: >-
         F02-P3 Threat Profile. Where the project area is most disturbed and
-        what is driving it, across the three ecosystems.
+        what is driving it, across the three ecosystems plus an `Other`
+        class for everything that is none of them.
 
-        ECOSYSTEM BUCKETS ARE NOT THE SAME AS F02-P4's. This endpoint reads
-        `threat/ecosystem_v3.tif`, whose Dryland class ALREADY INCLUDES
-        SAVANNA -- verified against the pathway raster, where 100% of the
-        savanna pixels fall in this layer's Dryland class. Its fourth class is
-        `Other` (not an ecosystem), where the pathway raster's fourth class is
-        Savanna. So the two layers disagree on totals for the same AOI and
-        their areas must not be mixed; see `total_area_ha` below.
+        The Overview's ecosystem buckets are the pathway raster's ecosystem
+        band with savanna folded into Dryland forest, so its totals line up
+        with F02-P4's ecosystem split; class 0 is reported as the `Other`
+        card. `total_ecosystem_area_ha` counts all four classes, so the
+        four cards sum to 100% of it and the total covers essentially the
+        whole project area.
       operationId: getThreat
 
   /geos/feature/pathway:
@@ -3685,15 +3685,16 @@ components:
 
     ThreatOverview:
       type: object
-      description: the Overview tab. Screening summary across all three ecosystems.
+      description: the Overview tab. Screening summary across the three
+        ecosystems plus the Other class.
       properties:
         total_ecosystem_area_ha:
           type: number
           description: >-
-            the three ecosystems combined, and the denominator for
-            `percentage_total`. NOT the project area: land that is none of the
-            three is simply not counted, and that shortfall shows up in
-            `total_ecosystem_percentage`.
+            all four classes combined (the three ecosystems plus Other),
+            and the denominator for `percentage_total` -- so the four cards
+            sum to 100% of it and it covers essentially the whole valid
+            extent of the project area.
 
             THIS TAB CARRIES NO DISTURBED FIGURES. Section 3.1 measures
             disturbance as `ecosystem AND disturbed`, while the three
@@ -3715,7 +3716,8 @@ components:
           description: total ecosystem area as a share of the PROJECT area.
         ecosystems:
           type: array
-          description: always three, in the order Dryland, Mangrove, Peatland.
+          description: always four, in the order Dryland, Mangrove,
+            Peatland, Other.
           items:
             $ref: "#/components/schemas/ThreatEcosystemSummary"
 

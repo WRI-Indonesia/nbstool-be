@@ -71,9 +71,11 @@ except ImportError:  # `python run_threat.py`: no package around it
     from settings import layer_path
 
 
-# The labels `ecosystem_v3.tif` carries, which the analysis keys on. Class 1 is "Dryland" and it
-# INCLUDES SAVANNA -- the layer does not separate them. The Overview card prints
-# THREAT_ECOSYSTEM_DISPLAY_NAMES instead ("Dryland forest"), same split as F02-P4.
+# The class labels the analysis keys on (notebook's own since `203cad3`: class 1 is "Dryland
+# forest" and the overview FOLDS SAVANNA (4) INTO IT; class 0 is a real "Other"). The Overview
+# card's `label` still goes through THREAT_ECOSYSTEM_DISPLAY_NAMES, whose `.get(key, label)`
+# fallback now passes the class labels straight through.
+_OTHER_LABEL = THREAT_ECOSYSTEM_CLASSES[0]
 _DRYLAND_LABEL = THREAT_ECOSYSTEM_CLASSES[1]
 _MANGROVE_LABEL = THREAT_ECOSYSTEM_CLASSES[2]
 _PEATLAND_LABEL = THREAT_ECOSYSTEM_CLASSES[3]
@@ -96,7 +98,7 @@ _ZERO_OVERVIEW = {
     "total_disturbed_percentage": 0,
     "ecosystems": {label: {"area_ha": 0.0, "percentage_total": 0,
                            "disturbed_area_ha": 0.0, "disturbed_percentage": 0}
-                   for label in THREAT_ECOSYSTEM_CLASSES.values()},   # three, no Other
+                   for label in THREAT_ECOSYSTEM_CLASSES.values()},   # four, Other included
 }   # 3.1 still computes disturbed; `_overview` drops it from the wire, see there.
 _ZERO_DRYLAND = {"total_area_ha": 0.0, "remaining_forest": _G0, "disturbed": _G0,
                  "forest_loss": _G0, "forest_gain": _G0, "drivers": _NO_DRIVERS}
@@ -194,9 +196,10 @@ def _overview(aoi: AOI) -> tuple[dict, dict]:
     a dependency would hand it the slowest section's latency. Its areas render immediately and the
     disturbed figures fill in as the tabs arrive, on the same screen.
 
-    THREE ECOSYSTEMS, NO "OTHER". `total_ecosystem_area_ha` counts only classes 1-3, so the three
-    cards sum to exactly 100% of it; land that is none of them shows as the shortfall in
-    `total_ecosystem_percentage` against the project area.
+    FOUR CARDS SINCE NOTEBOOK `a0c3b14` (2026-09): "Other" (class 0) is a real card now, and
+    `total_ecosystem_area_ha` counts classes 0-3, so the four cards sum to exactly 100% of it
+    and the total covers essentially the whole valid extent of the AOI. The wire ids of the
+    three real ecosystems are unchanged.
     """
     raw, covered = _guard(analyze_all_ecosystem, aoi, _CORE_LAYERS, _ZERO_OVERVIEW)
     by_label = raw['ecosystems']
@@ -204,7 +207,8 @@ def _overview(aoi: AOI) -> tuple[dict, dict]:
     cards = []
     for key, label in (('Dryland', _DRYLAND_LABEL),
                        ('Mangrove', _MANGROVE_LABEL),
-                       ('Peatland', _PEATLAND_LABEL)):
+                       ('Peatland', _PEATLAND_LABEL),
+                       ('Other', _OTHER_LABEL)):
         row = by_label.get(label, {})
         cards.append({
             'ecosystem': key,

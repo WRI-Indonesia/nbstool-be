@@ -1,4 +1,11 @@
-"""3.1 All Ecosystem (Overview) - total ecosystem and disturbed area across the three ecosystems.
+"""3.1 All Ecosystem (Overview) - total ecosystem and disturbed area, per class.
+
+FOUR CLASSES since notebook commits `203cad3`/`a0c3b14` (2026-09): 0 is a real "Other" class
+(everything the ecosystem band maps to none of the three), savanna (4) folds into Dryland
+forest, and the total counts classes 0-3 -- so the class rows sum to the whole valid extent.
+The rewritten cell reads "SEA_NBS_PATHWAY band 2"; `threat/ecosystem_v3.tif` is verified
+byte-identical to that band, so the layer is unchanged here (the cell's own `band=2` against
+its single-band config path is an as-published upstream nit, reported).
 
 Data. `ecosystem_v3.tif` for the classes, `forest_disturbance_v3.tif` where ANY pixel > 0 counts as
 disturbed, following C. Bourgoin (2024) on JRC-TMF degraded/undisturbed forest. The scene approach
@@ -206,6 +213,10 @@ def analyze_all_ecosystem(aoi: AOI):
         aoi_geometry,
         aoi_crs
     )
+
+    # 4 Savanna -> 1 Dryland forest
+    ecosystem_data = ecosystem_data.copy()
+    ecosystem_data[ecosystem_data == 4] = 1
 
 
     # -------------------------------------------------------------------------

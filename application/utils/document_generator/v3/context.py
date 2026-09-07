@@ -161,7 +161,10 @@ def _threat_tags(threat: dict) -> dict:
     peatland = threat.get("peatland", {})
 
     ecosystems = overview.get("ecosystems") or []
-    dominant = max((e for e in ecosystems if isinstance(e, dict)),
+    # "Other" (class 0, a real overview card since notebook a0c3b14) is never the template's
+    # ecosystem: the tags and the tab mapping below name one of the three real ecosystems.
+    dominant = max((e for e in ecosystems
+                    if isinstance(e, dict) and e.get("label") != "Other"),
                    key=lambda e: e.get("area_ha") or 0, default=None)
     eco_label = dominant.get("label") if dominant else None
     tags["Threat: Forest / Mangrove / Peatland"] = eco_label

@@ -149,8 +149,12 @@ THREAT_PEAT_CANAL = "threat/peat_canal.tif"
 # Consequence: `total_ecosystem_area_ha` EXCLUDES land that is none of the three, so the three
 # cards sum to exactly 100% of it, and the shortfall against the project area shows up in
 # `total_ecosystem_percentage` rather than in an Other row.
+# Notebook commits `203cad3`/`a0c3b14` (2026-09): 0 is a REAL class, "Other" -- everything the
+# pathway ecosystem band maps to none of the three -- and code 4 (savanna) no longer has its own
+# class: the overview folds it into Dryland forest. Class 1 carries the notebook's own label.
 THREAT_ECOSYSTEM_CLASSES = {
-    1: "Dryland",
+    0: "Other",
+    1: "Dryland forest",
     2: "Mangrove",
     3: "Peatland",
 }
