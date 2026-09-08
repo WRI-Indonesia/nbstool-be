@@ -184,7 +184,16 @@ from ..utils import GeoLogic
 # one worker and costs a fraction of the memory. It is deliberate: the cap exists because of the
 # 4 GB, and letting retries past it means a user clicking three buttons can OOM the box out from
 # under somebody else's run. Weight the count if the queueing ever bites.
-_SITECHAR_SLOTS = threading.BoundedSemaphore(6)
+#
+# TWO, NOT SIX, SINCE 2026-09-08. The six above was sized for ONE process per 4 GB VM and for
+# characterisation-only runs. Production is now five gunicorn processes on one 8 GB box, each
+# with its own semaphore, and the union analysis run is not a characterisation run: k6 at six
+# concurrent unions had workers OOM-killed at 2.0-2.1 GB RSS each (dmesg, pids 13228/13179),
+# which puts one union at roughly 1 GB, three to five times the number this was built on.
+# Two slots per process is one union (weight 2, see _limit_slots) OR two light runs, so the box
+# holds at most five unions at once, about 5 GB peak on top of the idle baselines. Raise it
+# again only with a bigger box, and re-measure with k6 before trusting the new number.
+_SITECHAR_SLOTS = threading.BoundedSemaphore(2)
 
 # Multi-slot acquisition happens one requester at a time, or two weight-2 runs each holding one
 # slot could wait forever for each other's second. Holding this lock while blocked on the
