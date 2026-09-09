@@ -1,6 +1,6 @@
 # application/apis/geo_apis/features/routes.py
 from flask import jsonify, request, make_response, g as g_var
-from flask import Response, stream_with_context
+from flask import Response, stream_with_context, copy_current_request_context
 from flask_login import current_user
 from .. import geo_apis_blueprint
 from .... import db
@@ -255,6 +255,7 @@ def _keepalive(gen):
     stop = threading.Event()
 
     def produce():
+        """Runs the whole stage. NOTE this is a DIFFERENT THREAD to the request's own."""
         try:
             for line in gen:
                 # Timed put rather than a blocking one: with no consumer left this would
@@ -276,6 +277,20 @@ def _keepalive(gen):
             closer = getattr(gen, 'close', None)
             if closer is not None:
                 closer()
+
+    # FLASK CONTEXTS ARE THREAD LOCAL, and the stage needs one: persist_ndjson writes each line
+    # through `db.session`, which without an application context raises before the first line and
+    # turns every stream into a 500 (seen in production 2026-09-09, 98% of requests). The request
+    # context is copied rather than just the app one because the stage also logs, and this app's
+    # logging reads `g`. `stream_with_context` keeps the original context alive on this side
+    # meanwhile, and the two threads only ever read it.
+    #
+    # Outside a request -- the unit tests, a script -- there is nothing to copy and the stage runs
+    # bare, which is what those callers want anyway.
+    try:
+        produce = copy_current_request_context(produce)
+    except RuntimeError:
+        pass
 
     worker = threading.Thread(target=produce, name='stream-keepalive', daemon=True)
     worker.start()
