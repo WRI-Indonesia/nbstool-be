@@ -168,6 +168,7 @@ def logger_report_problem():
         reporter = current_user.email if current_user.is_authenticated else 'anonymous'
 
         fields = [
+            ('Env', '{} @ {}'.format(current_app.config.get('ENV'), request.host)),
             ('Reporter', reporter),
             ('Session', session_id),
             ('Page', data.get('page_url')),
