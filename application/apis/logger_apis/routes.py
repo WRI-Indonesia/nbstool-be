@@ -15,6 +15,14 @@ import gc
 
 from ...utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ...utils.common import app_exception_handler, success_handler
+from ...utils.cloud_recaptcha import CloudRecaptcha
+from ...utils import telegram
+
+import html
+
+recaptcha = CloudRecaptcha()
+
+MAX_REPORT_DESCRIPTION = 4000
 
 
 @logger_apis_blueprint.route('/list', methods=['GET'])
@@ -122,6 +130,58 @@ def logger_user_activity():
         }
 
         return make_response(jsonify(success_handler(results)), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+@logger_apis_blueprint.route('/report-problem', methods=['POST'])
+@cross_origin()
+def logger_report_problem():
+    g_var.__api_name__ = 'logger_report_problem'
+
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__description_data__ = {}
+    try:
+        g_var.__request_data__ = request.get_json()
+    except:
+        pass
+
+    try:
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+
+        data = request.get_json()
+
+        description = (data.get('description') or '').strip()
+        if not description:
+            raise AppMessageException('please input: description (text mandatory)')
+        if len(description) > MAX_REPORT_DESCRIPTION:
+            raise AppMessageException('invalid input: description exceeds {} characters'.format(MAX_REPORT_DESCRIPTION))
+
+        recaptcha.verify(data.get('recaptcha_token'), 'report_problem')
+
+        session_id = data.get('session_id')
+        g_var.__session_id__ = session_id
+
+        reporter = current_user.email if current_user.is_authenticated else 'anonymous'
+
+        fields = [
+            ('Reporter', reporter),
+            ('Session', session_id),
+            ('Page', data.get('page_url')),
+            ('Locale', data.get('locale')),
+            ('User agent', data.get('user_agent') or request.headers.get('User-Agent')),
+            ('Time (UTC)', get_date().strftime('%Y-%m-%d %H:%M:%S')),
+        ]
+        lines = ['\U0001F41E <b>Problem report</b>']
+        lines += ['<b>{}:</b> {}'.format(k, html.escape(str(v))) for k, v in fields if v]
+        lines += ['', html.escape(description)]
+
+        telegram.send_message('\n'.join(lines))
+
+        return make_response(jsonify(success_handler({}, status_code=201, message='Thank you, your report has been received')), 201)
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

@@ -2998,6 +2998,79 @@ paths:
       description: get paginated user activity logs with search and filtering
       operationId: userActivity
 
+  /loggers/report-problem:
+    post:
+      tags:
+        - Logger module
+      summary: report a problem
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: ReportProblemCreated
+                required:
+                  - status_code
+                  - message
+                properties:
+                  status_code:
+                    type: integer
+                    examples:
+                      - 201
+                  message:
+                    type: string
+                    examples:
+                      - Thank you, your report has been received
+          description: Created
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: submit a problem report from the frontend; the report is forwarded to
+        the NbS Tool team and is not stored. Works with or without an authenticated
+        user; when authenticated the reporter's email is attached
+      operationId: reportProblem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+              properties:
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  examples:
+                    - The map does not load after drawing a polygon
+                session_id:
+                  type: string
+                  maxLength: 100
+                  examples:
+                    - a1851132-ce01-4c1a-850e-2c9d219d7820
+                page_url:
+                  type: string
+                  format: uri
+                  examples:
+                    - https://nbstool.scenecoalition.org/interactive-map
+                locale:
+                  type: string
+                  examples:
+                    - en
+                user_agent:
+                  type: string
+                  examples:
+                    - Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
+                recaptcha_token:
+                  type: string
+                  description: reCAPTCHA token from the client for the
+                    "report_problem" action; 400 when missing or verification
+                    fails
+        required: true
+
   /incubators/review:
     post:
       tags:
