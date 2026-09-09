@@ -16,6 +16,7 @@ import os
 import gc
 import uuid
 import json
+import ctypes
 import threading
 
 from shapely.geometry import Polygon
@@ -201,6 +202,31 @@ _SITECHAR_SLOTS = threading.BoundedSemaphore(2)
 # slipping past it.
 _SLOTS_ACQUIRE_LOCK = threading.Lock()
 
+# A QUEUED REQUEST HAS TO KEEP TALKING. Waiting for a slot happens before the first real line,
+# so a queued stream would otherwise sit silent: Cloudflare (non-Enterprise) cuts an idle
+# response at 100 s and the user gets a 524 instead of the queue place the cap was built to give
+# them. Every _HEARTBEAT_SECONDS of waiting writes a byte, which resets that timer.
+#
+# A SPACE, AND DELIBERATELY NO NEWLINE, so the stream gains no LINES at all -- the waiting bytes
+# become leading whitespace on the `preparation` line, which every JSON parser already accepts.
+# The two obvious alternatives both need the client changed: a blank line makes readers that
+# `JSON.parse` every split line throw on an empty string, and a `{"process": "queued"}` line
+# parses but then has to be special-cased by anything that draws a card per process name.
+# Nothing is emitted once the run starts. If a queue position ever needs to be SHOWN to the
+# user, that is the moment to upgrade this to a real line and tell the frontend.
+_HEARTBEAT = " "
+_HEARTBEAT_SECONDS = 30
+
+# glibc keeps freed pages in the process arena, so RSS stays at the run's high-water mark long
+# after the run: five idle workers held 6.7 GB of an 8 GB box after a k6 pass (2026-09-08).
+# malloc_trim releases what the arena is no longer using back to the OS. Absent (musl, Windows
+# dev boxes) it stays None and nothing happens.
+try:
+    _malloc_trim = ctypes.CDLL("libc.so.6").malloc_trim
+    _malloc_trim.argtypes = [ctypes.c_size_t]
+except (OSError, AttributeError):
+    _malloc_trim = None
+
 
 def _limit_slots(gen, weight=1):
     """Run `gen` while holding `weight` slots. Acquired lazily at the first NDJSON line, released
@@ -211,15 +237,41 @@ def _limit_slots(gen, weight=1):
     once. Measured 2026-08-28 (k6, 6 concurrent unions on a 4 GB c2d-highcpu-2): the worker was
     OOM-killed repeatedly, resetting every in-flight stream. At weight 2 the union takes a
     characterisation-sized budget twice over, capping unions at 3 per instance.
+
+    BOTH WAITS ARE TIMED OUT RATHER THAN BLOCKING, and the queue lock is one of them: a request
+    blocked on `_SLOTS_ACQUIRE_LOCK` cannot emit anything, so if only the head of the queue
+    heartbeated, everybody behind it would still be cut off by Cloudflare at 100 s.
     """
-    with _SLOTS_ACQUIRE_LOCK:
-        for _ in range(weight):
-            _SITECHAR_SLOTS.acquire()
+    holding = 0
+    have_lock = False
     try:
+        while not have_lock:
+            have_lock = _SLOTS_ACQUIRE_LOCK.acquire(timeout=_HEARTBEAT_SECONDS)
+            if not have_lock:
+                yield _HEARTBEAT
+
+        while holding < weight:
+            if _SITECHAR_SLOTS.acquire(timeout=_HEARTBEAT_SECONDS):
+                holding += 1
+            else:
+                yield _HEARTBEAT
+
+        # Released as soon as this run's slots are in hand: the lock serialises ACQUISITION, not
+        # the run itself, or one union would hold the queue for its whole two minutes.
+        _SLOTS_ACQUIRE_LOCK.release()
+        have_lock = False
+
         yield from gen
     finally:
-        for _ in range(weight):
+        if have_lock:
+            _SLOTS_ACQUIRE_LOCK.release()
+        for _ in range(holding):
             _SITECHAR_SLOTS.release()
+        # After the slots are back, so the next run can start while this one's pages are being
+        # returned. Only when this run actually held slots -- a client that disconnected while
+        # queued released nothing worth trimming.
+        if holding and _malloc_trim is not None:
+            _malloc_trim(0)
 
 
 # FRONTEND ERROR-PATH REHEARSAL. `?error_test=` makes this endpoint fail ON PURPOSE, so the three

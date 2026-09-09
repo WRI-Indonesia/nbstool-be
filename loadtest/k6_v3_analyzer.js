@@ -52,6 +52,10 @@ export const options = {
     thresholds: {
         http_req_failed: ['rate<0.05'],
         truncated_streams: ['count==0'],
+        // Not real limits (the timeout is the limit); listing the tags makes k6 print
+        // analysis and benefit latency as separate rows instead of one blended number.
+        'http_req_duration{name:analysis}': ['p(95)<600000'],
+        'http_req_duration{name:benefit}': ['p(95)<600000'],
     },
     summaryTrendStats: ['min', 'med', 'p(95)', 'max'],
 };
@@ -117,6 +121,9 @@ function checkStream(res, name) {
             }
         },
     });
+    if (res.status !== 200) {
+        console.warn(`${name} ${res.status} ${(res.body || '').slice(0, 200).replace(/\s+/g, ' ')}`);
+    }
     if (res.status === 200 && !ok) truncatedStreams.add(1);
     if (res.status === 200 && res.body) {
         for (const line of res.body.trim().split('\n')) {

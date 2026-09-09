@@ -144,7 +144,23 @@ def plan(wanted: list[str] | None) -> list[dict]:
 # wall clock is set by the slowest components either way, and per-run memory decides how many
 # runs an instance holds. The union adds threat's twelve rasters and pathway's four band reads
 # to the same run, so if anything the pressure argument for a modest pool is stronger here.
-_MAX_WORKERS = 6
+#
+# FOUR SINCE 2026-09-09, and the reason is CONTENTION, NOT MEMORY. Site characterisation's own
+# table below measured pool width as a weak memory lever (1 worker 130 MB, 6 workers 180 MB), so
+# narrowing this does not meaningfully shrink a run. What it changes is how many raster threads
+# the BOX carries: production is five gunicorn processes on four CPUs, each able to hold a union,
+# so at 6 the box runs ~30 component threads against 4 cores -- past the contention cliff that
+# same table found at 25 workers in ONE run, where the worst case doubled and the spread went to
+# 18.6 s. Four keeps it near 20.
+#
+# THIS IS A HYPOTHESIS WITH A BASELINE TO BEAT, not a measured win: k6 6 VU on the production box
+# at width 6 gave 12 iterations, median 3m09s, p95 4m57s, zero failures (2026-09-08). Re-run the
+# same test after this change; if the median does not improve, put it back to 6.
+#
+# Habitat area's pool is deliberately NOT narrowed with it (see AOH_MAX_WORKERS): that one is
+# HTTP latency on ~400 small per-species reads, and cutting it costs ~40 s of wall clock to save
+# a few MB.
+_MAX_WORKERS = 4
 
 
 def _run_components(aoi: AOI, wanted: list[str] | None = None):

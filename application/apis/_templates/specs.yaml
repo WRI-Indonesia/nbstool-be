@@ -1064,6 +1064,13 @@ paths:
             the code it already has. Six lines: `preparation`, one per tab,
             then `end`.
 
+            THE FIRST LINE MAY ARRIVE WITH LEADING WHITESPACE, and needs no
+            handling: JSON parsers already accept it. A run waits its turn when
+            the instance is busy, and an idle response is cut by the CDN at
+            100 s, so one space is written every 30 s of waiting to hold the
+            connection open. No extra lines are produced; the amount of
+            whitespace says how long the request queued, nothing else.
+
             STREAMED RATHER THAN RETURNED WHOLE because the four sections map
             one-to-one onto the four tabs and the user lands on Overview.
             Overview is also the cheapest section (two rasters), so it can be
@@ -1156,6 +1163,13 @@ paths:
             `/geos/feature/site-characterisation`, one line per component,
             `preparation` first and `end` last. 30 components: the 25
             site-characterisation cards, the 4 threat tabs, and `pathway`.
+
+            THE FIRST LINE MAY ARRIVE WITH LEADING WHITESPACE, and needs no
+            handling: JSON parsers already accept it. A run waits its turn when
+            the instance is busy, and an idle response is cut by the CDN at
+            100 s, so one space is written every 30 s of waiting to hold the
+            connection open. No extra lines are produced; the amount of
+            whitespace says how long the request queued, nothing else.
         "400":
           $ref: "#/components/responses/Bad Request"
         "500":
@@ -1216,6 +1230,13 @@ paths:
             The response is chunked and the status is 200 from the moment the
             first line is written, so a component that fails afterwards cannot
             change it: read `end` to know the run completed.
+
+            THE FIRST LINE MAY ARRIVE WITH LEADING WHITESPACE, and needs no
+            handling: JSON parsers already accept it. A run waits its turn when
+            the instance is busy, and an idle response is cut by the CDN at
+            100 s, so one space is written every 30 s of waiting to hold the
+            connection open. No extra lines are produced; the amount of
+            whitespace says how long the request queued, nothing else.
         "400":
           $ref: "#/components/responses/Bad Request"
         "500":
@@ -1406,6 +1427,13 @@ paths:
             component, then `end`. Emission is cheapest-first, so the carbon
             components all land in the first ~13 s while the two habitat
             components (~25 s each) are still reading.
+
+            THE FIRST LINE MAY ARRIVE WITH LEADING WHITESPACE, and needs no
+            handling: JSON parsers already accept it. A run waits its turn when
+            the instance is busy, and an idle response is cut by the CDN at
+            100 s, so one space is written every 30 s of waiting to hold the
+            connection open. No extra lines are produced; the amount of
+            whitespace says how long the request queued, nothing else.
 
             Lines, in emission order: `assumptions` (the run's inputs echoed:
             duration, carbon_project, carbon_risk, selections, plus

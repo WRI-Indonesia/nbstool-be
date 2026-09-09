@@ -8,6 +8,7 @@ generated-geopdf/
 .claude/
 loadtest/aoi_pool.json
 ecosystem.config.js
+build_runner/nginx-nbstool-be.conf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
