@@ -17,6 +17,7 @@ import gc
 import uuid
 import json
 import ctypes
+import queue
 import threading
 
 from shapely.geometry import Polygon
@@ -228,6 +229,92 @@ except (OSError, AttributeError):
     _malloc_trim = None
 
 
+# How long the producer thread waits to hand over a line before checking whether the client is
+# still there. Only bounds how quickly an abandoned run stops, so it is short but not tight.
+_PRODUCER_POLL = 0.5
+
+_DONE = object()
+
+
+def _keepalive(gen):
+    """Yield everything `gen` yields, writing a heartbeat whenever it goes quiet.
+
+    THE WAIT FOR A SLOT IS NOT THE ONLY SILENCE. A run that is already streaming goes quiet
+    between lines too, and under load those gaps get long: measured 2026-09-09 at 10 VU, six
+    benefit streams were reset by Cloudflare after `preparation` while their first component was
+    still computing behind five unions on four CPUs. Once headers are out the CDN cannot answer
+    524, so an idle cut reaches the client as a truncated stream -- indistinguishable from a
+    crash, and the reason nginx-nbstool-be.conf asks for a line every ~90 s.
+
+    A generator cannot be polled, so the run moves to a thread and this yields whatever has
+    arrived, or a heartbeat when nothing has. The queue holds one line: the producer stays a
+    single line ahead, so a slow client still throttles the run instead of letting it compute
+    the whole answer into memory.
+    """
+    lines = queue.Queue(maxsize=1)
+    stop = threading.Event()
+
+    def produce():
+        try:
+            for line in gen:
+                # Timed put rather than a blocking one: with no consumer left this would
+                # otherwise block forever and leak the thread.
+                while not stop.is_set():
+                    try:
+                        lines.put(line, timeout=_PRODUCER_POLL)
+                        break
+                    except queue.Full:
+                        continue
+                if stop.is_set():
+                    return
+            _hand_over(lines, stop, _DONE)
+        except BaseException as exc:      # re-raised on the consumer side, see below
+            _hand_over(lines, stop, exc)
+        finally:
+            # Every real caller passes a generator; a plain iterator has no close(), and letting
+            # that raise here would only bury the failure in a worker thread's traceback.
+            closer = getattr(gen, 'close', None)
+            if closer is not None:
+                closer()
+
+    worker = threading.Thread(target=produce, name='stream-keepalive', daemon=True)
+    worker.start()
+    try:
+        while True:
+            try:
+                item = lines.get(timeout=_HEARTBEAT_SECONDS)
+            except queue.Empty:
+                yield _HEARTBEAT
+                continue
+            if item is _DONE:
+                return
+            if isinstance(item, BaseException):
+                # The run failed. Raising here keeps the behaviour a caller already has: the
+                # stream stops without `end`, which is how a failed run has always looked.
+                raise item
+            yield item
+    finally:
+        stop.set()
+        # Unblock a producer parked in put(), then give it a moment to unwind. It can still be
+        # inside a component, in which case it exits when that returns -- a bounded overshoot of
+        # the slot this run holds, and the alternative is blocking teardown for a whole component.
+        try:
+            lines.get_nowait()
+        except queue.Empty:
+            pass
+        worker.join(timeout=_PRODUCER_POLL * 4)
+
+
+def _hand_over(lines, stop, item):
+    """Put a terminal item, giving up if the consumer has gone."""
+    while not stop.is_set():
+        try:
+            lines.put(item, timeout=_PRODUCER_POLL)
+            return
+        except queue.Full:
+            continue
+
+
 def _limit_slots(gen, weight=1):
     """Run `gen` while holding `weight` slots. Acquired lazily at the first NDJSON line, released
     on exhaustion and on close(), which stream_with_context calls when the client disconnects.
@@ -261,7 +348,9 @@ def _limit_slots(gen, weight=1):
         _SLOTS_ACQUIRE_LOCK.release()
         have_lock = False
 
-        yield from gen
+        # Wrapped here rather than at each call site: every stream route wants the same
+        # keepalive, and closing nests correctly -- the run is stopped before the slots go back.
+        yield from _keepalive(gen)
     finally:
         if have_lock:
             _SLOTS_ACQUIRE_LOCK.release()
@@ -305,9 +394,14 @@ _ERROR_TEST_KEEP = 4          # `stream` mode: preparation plus three components
 
 def _error_test_truncate(gen):
     """`error_test=stream`: stop mid-response without `end`, as a dropped connection would."""
-    for index, line in enumerate(gen):
-        if index >= _ERROR_TEST_KEEP:
+    kept = 0
+    for line in gen:
+        if line == _HEARTBEAT:      # keepalive filler, not one of the lines being counted
+            yield line
+            continue
+        if kept >= _ERROR_TEST_KEEP:
             return
+        kept += 1
         yield line
 
 
@@ -335,7 +429,12 @@ def _error_test_states(retry_url):
 def _error_test_overlay(gen, retry_url):
     """`error_test=data`: rewrite each component line's `error_status`, leaving the payload real."""
     states = _error_test_states(retry_url)
-    for index, line in enumerate(gen):
+    index = -1
+    for line in gen:
+        if line == _HEARTBEAT:      # keepalive filler, carries no payload to rewrite
+            yield line
+            continue
+        index += 1
         payload = json.loads(line)
         if payload['process'] not in ('preparation', 'end'):
             slot = (index - 1) % len(states)

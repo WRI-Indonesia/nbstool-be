@@ -22,7 +22,7 @@
 
 import http from 'k6/http';
 import { check, fail } from 'k6';
-import { Counter } from 'k6/metrics';
+import { Counter, Trend } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
 
 const BASE_URL = __ENV.BASE_URL || fail('set -e BASE_URL=https://<host>');
@@ -67,6 +67,12 @@ const truncatedStreams = new Counter('truncated_streams');
 // so a run is only trustworthy when this stays near zero (a few known data-gap
 // partials, e.g. social statistics on Indonesia, are normal).
 const failedComponents = new Counter('failed_components');
+
+// Responses that arrived with leading whitespace: the server writes a space every 30 s while a
+// request waits for a slot, so this counts how many runs queued -- and, on a first run after a
+// deploy, proves the keepalive is actually live. `queued_seconds` is that wait, 30 s per space.
+const queuedStreams = new Counter('queued_streams');
+const queuedSeconds = new Trend('queued_seconds');
 
 export function setup() {
     const sessions = [];
@@ -126,6 +132,11 @@ function checkStream(res, name) {
     }
     if (res.status === 200 && !ok) truncatedStreams.add(1);
     if (res.status === 200 && res.body) {
+        const lead = res.body.length - res.body.replace(/^ +/, '').length;
+        if (lead > 0) {
+            queuedStreams.add(1);
+            queuedSeconds.add(lead * 30);   // one space per 30 s of waiting
+        }
         for (const line of res.body.trim().split('\n')) {
             try {
                 if (JSON.parse(line).error_status) failedComponents.add(1);
