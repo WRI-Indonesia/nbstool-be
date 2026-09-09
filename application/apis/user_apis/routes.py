@@ -11,7 +11,7 @@ from passlib.hash import sha256_crypt
 import uuid
 import base64
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from werkzeug.utils import secure_filename
 
 from flask_cors import cross_origin
@@ -604,6 +604,49 @@ def user_ga4_report():
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
+@user_apis_blueprint.route('/email-notify', methods=['POST'])
+@cross_origin()
+def user_email_notify():
+    g_var.__api_name__ = 'user_email_notify'
+
+    try:
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+
+        data = request.get_json()
+
+        email = data.get('email')
+        details = data.get('details')
+
+        if not email:
+            raise AppMessageException('please input: email (text mandatory)')
+        if not re.match(r'[^@]+@[^@]+\.[^@]+', email):
+            raise AppMessageException('invalid input format: email')
+        if len(email) > 255:
+            raise AppMessageException('invalid input: email too long')
+        if details is not None and not isinstance(details, (dict, list)):
+            raise AppMessageException('invalid input format: details (json object/array)')
+
+        query = '''
+        insert into tbl_v3_email_notify (email, details, created_at)
+        values (:email, cast(:details as jsonb), :created_at)
+        '''
+
+        db.session.execute(db.text(query), {
+            'email': email,
+            'details': json.dumps(sanitize_for_jsonb(details)) if details is not None else None,
+            'created_at': datetime.now(UTC),
+        })
+        db.session.commit()
+
+        return make_response(jsonify(success_handler({}, message='Success')), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        db.session.rollback()
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
