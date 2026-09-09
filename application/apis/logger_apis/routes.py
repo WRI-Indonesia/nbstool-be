@@ -155,8 +155,6 @@ def logger_report_problem():
         data = request.get_json()
 
         description = (data.get('description') or '').strip()
-        if not description:
-            raise AppMessageException('please input: description (text mandatory)')
         if len(description) > MAX_REPORT_DESCRIPTION:
             raise AppMessageException('invalid input: description exceeds {} characters'.format(MAX_REPORT_DESCRIPTION))
 
@@ -178,7 +176,8 @@ def logger_report_problem():
         ]
         lines = ['\U0001F41E <b>Problem report</b>']
         lines += ['<b>{}:</b> {}'.format(k, html.escape(str(v))) for k, v in fields if v]
-        lines += ['', html.escape(description)]
+        if description:
+            lines += ['', html.escape(description)]
 
         telegram.send_message('\n'.join(lines))
 

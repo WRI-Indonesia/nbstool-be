@@ -3037,12 +3037,9 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - description
               properties:
                 description:
                   type: string
-                  minLength: 1
                   maxLength: 4000
                   examples:
                     - The map does not load after drawing a polygon
