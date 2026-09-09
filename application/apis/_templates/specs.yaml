@@ -3889,6 +3889,16 @@ components:
             to: {type: integer}
         drivers:
           $ref: "#/components/schemas/ThreatDrivers"
+        driver_keys:
+          type: object
+          description: >-
+            frontend keys for the `drivers` texts, same three lists
+            (`non_natural`, `natural`, `other`) in the same order, from the
+            label-to-key mapping table; null where a text has no key.
+          properties:
+            non_natural: {type: array, items: {type: [string, "null"]}}
+            natural: {type: array, items: {type: [string, "null"]}}
+            other: {type: array, items: {type: [string, "null"]}}
 
     ThreatMangrove:
       type: object
@@ -3908,6 +3918,11 @@ components:
             string "Not identified" (never null) when neither occurs. This is
             the only place in F02-P3 that ranks drivers by area; the Forest tab
             has no equivalent.
+        main_pressure_key:
+          type: [string, "null"]
+          description: frontend key for `main_pressure` from the
+            label-to-key mapping table; null for "Not identified" and
+            the combined label.
         period:
           type: object
           properties:
@@ -3915,6 +3930,16 @@ components:
             to: {type: integer}
         drivers:
           $ref: "#/components/schemas/ThreatDrivers"
+        driver_keys:
+          type: object
+          description: >-
+            frontend keys for the `drivers` texts, same three lists
+            (`non_natural`, `natural`, `other`) in the same order, from the
+            label-to-key mapping table; null where a text has no key.
+          properties:
+            non_natural: {type: array, items: {type: [string, "null"]}}
+            natural: {type: array, items: {type: [string, "null"]}}
+            other: {type: array, items: {type: [string, "null"]}}
 
     ThreatPeatland:
       type: object
@@ -3960,6 +3985,14 @@ components:
           description: >-
             highest fire-risk class present in the peatland. FIVE levels, not
             three -- wider than the other two indicators.
+        badge_keys:
+          type: object
+          description: frontend keys for the three indicator badges, from the
+            label-to-key mapping table; null where the table has no row.
+          properties:
+            canal_proximity: {type: [string, "null"]}
+            drainage_pressure: {type: [string, "null"]}
+            fire_risk: {type: [string, "null"]}
 
     PathwaySelection:
       type: object

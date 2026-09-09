@@ -30,6 +30,7 @@ from rasterio.coords import disjoint_bounds
 
 try:
     from ..common import AOI
+    from ..db import mapping_key
     from ..config import (
         THREAT_DISTURBANCE,
         THREAT_ECOSYSTEM,
@@ -54,6 +55,7 @@ except ImportError:  # `python run_threat.py`: no package around it
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     from all_ecosystems import analyze_all_ecosystem
     from common import AOI
+    from db import mapping_key
     from config import (
         THREAT_DISTURBANCE,
         THREAT_ECOSYSTEM,
@@ -234,6 +236,21 @@ def _overview(aoi: AOI) -> tuple[dict, dict]:
     return results, view
 
 
+# Frontend keys for the driver texts (public.tbl_list_mapping_key, section threat / <ecosystem> /
+# driver / human|natural|other, loaded once per process). Emitted as a `driver_keys` sibling of
+# `drivers`, same three lists in the same order, so the existing lists never change shape; a
+# text the table does not know keys None. The table calls the non-natural list "human".
+_DRIVER_GROUPS = (('non_natural', 'human'), ('natural', 'natural'), ('other', 'other'))
+
+
+def _driver_keys(ecosystem: str, drivers: dict) -> dict:
+    return {
+        wire: [mapping_key('threat', ecosystem, 'driver', table_group, None, label)
+               for label in (drivers.get(wire) or [])]
+        for wire, table_group in _DRIVER_GROUPS
+    }
+
+
 def _graded(raw: dict, key: str) -> tuple[float, float]:
     """`{area_ha, percentage}` sub-dict flattened. The notebook nests these; the cards do not."""
     block = raw.get(key) or {}
@@ -260,6 +277,7 @@ def _dryland(aoi: AOI) -> tuple[dict, dict]:
         'forest_gain_percentage': gain_pct,
         'period': dict(_PERIOD),
         'drivers': raw['drivers'],
+        'driver_keys': _driver_keys('dryland', raw['drivers']),
     }
     # A PERMANENT METHODOLOGY CAVEAT, so a note rather than a flag: it is true on every request and
     # routing it through error_status would mark this tab every single time.
@@ -286,8 +304,11 @@ def _mangrove(aoi: AOI) -> tuple[dict, dict]:
         'disturbed_area_ha': disturbed_ha,
         'disturbed_percentage': disturbed_pct,
         'main_pressure': raw['main_pressure'],
+        'main_pressure_key': mapping_key('threat', 'mangrove', 'driver', 'human', None,
+                                         raw['main_pressure']),
         'period': dict(_PERIOD),
         'drivers': raw['drivers'],
+        'driver_keys': _driver_keys('mangrove', raw['drivers']),
     }
     missing = [_NO_COVERAGE] if not covered else _absent(_MANGROVE_LABEL, raw['total_area_ha'])
     results = {'narrative': "", 'tables': {}, 'values': raw, 'flags': [], 'missing': missing}
@@ -315,6 +336,14 @@ def _peatland(aoi: AOI) -> tuple[dict, dict]:
         'canal_distance_m': drivers['canal_distance_m'],
         'drainage_pressure': drivers['drainage_pressure'],
         'fire_risk': drivers['fire_risk'],
+        # Frontend keys for the three indicator badges, from the mapping table's peatland/badge
+        # group (keyed on the card labels, which is all that table carries for this tab).
+        'badge_keys': {
+            field: mapping_key('threat', 'peatland', 'badge', None, None, label)
+            for field, label in (('canal_proximity', 'Canal proximity'),
+                                 ('drainage_pressure', 'Drainage pressure'),
+                                 ('fire_risk', 'Fire risk'))
+        },
     }
     notes = ["3.4: canal proximity and drainage pressure deliberately consider canals OUTSIDE the "
              "project boundary -- canals affect the water table up to 500 m away and biomass "

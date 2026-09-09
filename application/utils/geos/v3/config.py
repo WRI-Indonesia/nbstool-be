@@ -747,6 +747,24 @@ COUNTRY_ISO3 = {
 }
 
 
+# 6.3 fields whose category text has a frontend key in `public.tbl_list_mapping_key`
+# (section site_characteristic / people), by the table's (topic, sub topic). Rows of these
+# list fields gain a `key` next to their `id`; the two `top_id` fields gain a `<field>_key`
+# sibling. Fields not listed here carry no key -- household_incomes_by_sector's categories are
+# household-size bands the table does not map.
+SOCIAL_MAPPING_TOPICS = {
+    "employment_sectors": ("employment", "sector"),
+    "dominant_occupation_id": ("employment", "sector"),
+    "industries_occupations": ("employment", "industries"),
+    "population_education_levels": ("education", "school"),
+    "most_common_education_people_level_id": ("education", "school"),
+    "common_diseases": ("health", "disease"),
+    "water_access": ("housing", "water"),
+    "toilet_categories": ("housing", "toilet"),
+    "permanent_reserved_forests": ("housing", "forest"),
+}
+
+
 def _ind(table, level, read="value", exclude=(), **where):
     """One contract field, and where its number comes from.
 

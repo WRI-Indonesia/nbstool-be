@@ -53,6 +53,7 @@ try:
         slope_percent_from_dem,
         tabulate_classes,
     )
+    from ...db import mapping_key
     from ...config import (
         ELEVATION_BREAKS,
         ELEVATION_CLASSES,
@@ -78,6 +79,7 @@ except ImportError:  # `python terrain_slope_elevation.py`: no package around it
         slope_percent_from_dem,
         tabulate_classes,
     )
+    from db import mapping_key
     from config import (
         ELEVATION_BREAKS,
         ELEVATION_CLASSES,
@@ -91,10 +93,17 @@ except ImportError:  # `python terrain_slope_elevation.py`: no package around it
 
 
 def _elevation_dict(code: int | None) -> dict | None:
-    """One frontend label object, or None when there is no class to name."""
+    """One frontend label object, or None when there is no class to name.
+
+    The key comes from the label-to-key table (source of truth, team 2026-09-09; its texts spell
+    the range -- "Lowland (0-500 m)" -- hence the prefix match), falling back to ELEVATION_KEYS
+    exactly as before when the table has no row."""
     if code is None:
         return None
-    return {'key': ELEVATION_KEYS.get(code), 'fallback': ELEVATION_CLASSES[code]}
+    label = ELEVATION_CLASSES[code]
+    key = mapping_key('site_characteristic', 'informasi_umum', 'elevation', None, None, label,
+                      prefix=True)
+    return {'key': key or ELEVATION_KEYS.get(code), 'fallback': label}
 
 
 def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:

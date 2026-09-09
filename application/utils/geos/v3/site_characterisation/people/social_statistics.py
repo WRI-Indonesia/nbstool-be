@@ -39,9 +39,10 @@ try:
         SOCIAL_AREA_NAME_FIELDS,
         SOCIAL_INDICATORS,
         SOCIAL_LEVEL_SOURCES,
+        SOCIAL_MAPPING_TOPICS,
         SOCIAL_NO_AREA_NAME,
     )
-    from ...db import load_social_rows, load_statistical_area
+    from ...db import load_social_rows, load_statistical_area, mapping_key
 except ImportError:  # `python social_statistics.py`: no package around it
     import pathlib
     import sys
@@ -52,9 +53,10 @@ except ImportError:  # `python social_statistics.py`: no package around it
         SOCIAL_AREA_NAME_FIELDS,
         SOCIAL_INDICATORS,
         SOCIAL_LEVEL_SOURCES,
+        SOCIAL_MAPPING_TOPICS,
         SOCIAL_NO_AREA_NAME,
     )
-    from db import load_social_rows, load_statistical_area
+    from db import load_social_rows, load_statistical_area, mapping_key
 
 # The admin level an indicator asks for, and which of 1.2's names answers it. Level 0 is
 # country-wide and needs no name at all.
@@ -381,6 +383,21 @@ def analyze_social_statistics(aoi, admin_values: dict | None = None) -> tuple[di
         'notes': notes,
         'retryable': retryable,
     }
+
+    # Frontend keys for the category texts (public.tbl_list_mapping_key, loaded once per process):
+    # every row of a listed field gains `key` beside its `id`, and a bare top-category field gains
+    # a `<field>_key` sibling. Nothing existing moves; a text the table does not know keys None.
+    for fields in sections.values():
+        for field, (topic, sub_topic) in SOCIAL_MAPPING_TOPICS.items():
+            value = fields.get(field)
+            if isinstance(value, list):
+                for row in value:
+                    if isinstance(row, dict) and 'id' in row:
+                        row['key'] = mapping_key('site_characteristic', 'people', topic, sub_topic,
+                                                 iso3, row['id'])
+            elif isinstance(value, str):
+                fields[f"{field}_key"] = mapping_key('site_characteristic', 'people', topic,
+                                                     sub_topic, iso3, value)
 
     # The contract nests these under People rather than flattening them, because a section is what
     # the frontend renders as one card and several sections repeat field names across countries.

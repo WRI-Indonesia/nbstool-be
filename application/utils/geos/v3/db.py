@@ -490,3 +490,66 @@ def load_social_rows(iso3: str, table: str, level: int, area_name: str | None,
     # Decimal out of the driver; float is what the payload carries and what the arithmetic in
     # social_statistics expects.
     return int(rows[0].year), [(r.category, r.unit, float(r.value)) for r in rows]
+
+
+# ============================ LABEL -> KEY MAPPING (tbl_list_mapping_key) ============================
+# The app database's `public.tbl_list_mapping_key` maps the display text a component emits (a
+# statistics category, a threat driver, an elevation class) to the stable key the frontend
+# translates on -- scoped by (section, sub_section, topic, sub topic, country). Responses ADD the
+# key next to the text they already carry; nothing existing changes shape. 271 rows, loaded ONCE
+# per process and looked up in memory: no per-request query, no per-row query.
+
+_mapping_keys = None
+_mapping_keys_lock = threading.Lock()
+
+
+def _norm_label(text) -> str:
+    return " ".join(str(text).split()).casefold()
+
+
+def load_mapping_keys() -> dict:
+    """`{(section, sub_section, topic, sub_topic, country): {normalised text: key}}`, cached.
+
+    A database failure here must never cost a card: the table is a convenience for the
+    frontend, so on error the map is empty (every key resolves to None) and the error is logged.
+    Cached empty too, so a dead database is not re-hit on every request."""
+    global _mapping_keys
+    if _mapping_keys is not None:
+        return _mapping_keys
+
+    with _mapping_keys_lock:
+        if _mapping_keys is not None:
+            return _mapping_keys
+        mapping: dict = {}
+        try:
+            with _get_social_engine().connect() as conn:
+                conn.execute(text(f"SET statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+                rows = conn.execute(text(
+                    'select section, sub_section, topic, "sub topic", country, data_text, data_key '
+                    'from public.tbl_list_mapping_key'
+                )).fetchall()
+            for section, sub_section, topic, sub_topic, country, label, key in rows:
+                scope = (section, sub_section, topic, sub_topic, country)
+                mapping.setdefault(scope, {})[_norm_label(label)] = key
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("tbl_list_mapping_key could not be loaded")
+        _mapping_keys = mapping
+        return _mapping_keys
+
+
+def mapping_key(section: str, sub_section: str | None, topic: str | None, sub_topic: str | None,
+                country: str | None, label, prefix: bool = False) -> str | None:
+    """The frontend key for one display text, or None when the table has no row for it.
+
+    `prefix=True` matches a table text that STARTS WITH the label -- for vocabularies where the
+    table spells out a range the component's label omits ("Lowland (0-500 m)" vs "Lowland").
+    Kept opt-in: for the driver texts a prefix match would conflate "Small-scale agriculture"
+    with "Small-scale agriculture (fire)"."""
+    if label is None:
+        return None
+    scope = load_mapping_keys().get((section, sub_section, topic, sub_topic, country), {})
+    wanted = _norm_label(label)
+    if not prefix:
+        return scope.get(wanted)
+    return next((key for text, key in scope.items() if text.startswith(wanted)), None)

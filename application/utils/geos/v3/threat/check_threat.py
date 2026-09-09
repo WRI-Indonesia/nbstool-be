@@ -85,6 +85,8 @@ PEATLAND_RAW = {"peatland": {
                 "drainage_pressure": "Medium", "fire_risk": "High"},
 }}
 
+# The label->key lookup reads the app database; this suite is no-network, so it keys nothing.
+R.mapping_key = lambda *args: None
 R.analyze_all_ecosystem = lambda aoi: OVERVIEW_RAW
 R.analyze_dryland_forest = lambda aoi: DRYLAND_RAW
 R.analyze_mangrove = lambda aoi: MANGROVE_RAW
@@ -116,7 +118,11 @@ check("forest: five tiles present",
       {"total_area_ha", "remaining_forest_ha", "disturbed_area_ha", "forest_loss_ha",
        "forest_gain_ha"} <= set(fo))
 check("forest: no nested block survives",
-      not any(isinstance(v, dict) for k, v in fo.items() if k not in ("period", "drivers")))
+      not any(isinstance(v, dict) for k, v in fo.items()
+              if k not in ("period", "drivers", "driver_keys")))
+check("forest: driver_keys mirrors drivers list for list, entry for entry",
+      {k: len(v) for k, v in fo["driver_keys"].items()}
+      == {k: len(v) for k, v in fo["drivers"].items()})
 check("forest: percentages travel beside their areas",
       fo["remaining_forest_percentage"] == 75.0 and fo["forest_gain_percentage"] == 3.0)
 check("forest: the narrative period is stated, not derived from a raster",
