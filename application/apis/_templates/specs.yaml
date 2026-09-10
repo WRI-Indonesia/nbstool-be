@@ -3894,7 +3894,7 @@ components:
           description: >-
             frontend keys for the `drivers` texts, same three lists
             (`non_natural`, `natural`, `other`) in the same order, from the
-            label-to-key mapping table, as the row's full dotted path; null where a text has no key.
+            label-to-key mapping table; null where a text has no key.
           properties:
             non_natural: {type: array, items: {type: [string, "null"]}}
             natural: {type: array, items: {type: [string, "null"]}}
@@ -3921,7 +3921,7 @@ components:
         main_pressure_key:
           type: [string, "null"]
           description: frontend key for `main_pressure` from the
-            label-to-key mapping table, as the row's full dotted path; null for "Not identified" and
+            label-to-key mapping table; null for "Not identified" and
             the combined label.
         period:
           type: object
@@ -3935,7 +3935,7 @@ components:
           description: >-
             frontend keys for the `drivers` texts, same three lists
             (`non_natural`, `natural`, `other`) in the same order, from the
-            label-to-key mapping table, as the row's full dotted path; null where a text has no key.
+            label-to-key mapping table; null where a text has no key.
           properties:
             non_natural: {type: array, items: {type: [string, "null"]}}
             natural: {type: array, items: {type: [string, "null"]}}
@@ -3988,7 +3988,7 @@ components:
         badge_keys:
           type: object
           description: frontend keys for the three indicator badges, from the
-            label-to-key mapping table, as the row's full dotted path; null where the table has no row.
+            label-to-key mapping table; null where the table has no row.
           properties:
             canal_proximity: {type: [string, "null"]}
             drainage_pressure: {type: [string, "null"]}

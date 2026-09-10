@@ -530,12 +530,7 @@ def load_mapping_keys() -> dict:
                 )).fetchall()
             for section, sub_section, topic, sub_topic, country, label, key in rows:
                 scope = (section, sub_section, topic, sub_topic, country)
-                # The FULL dotted path, not the bare data_key: bare keys collide ("professional"
-                # sits under both employment/sector and employment/industries, the driver keys
-                # are '1'..'8' per ecosystem and group), the path is unique. Null scope parts
-                # (no sub topic, no country) are simply absent from the path.
-                path = ".".join(str(part) for part in (*scope, key) if part is not None)
-                mapping.setdefault(scope, {})[_norm_label(label)] = path
+                mapping.setdefault(scope, {})[_norm_label(label)] = key
         except Exception:
             import logging
             logging.getLogger(__name__).exception("tbl_list_mapping_key could not be loaded")
@@ -545,9 +540,7 @@ def load_mapping_keys() -> dict:
 
 def mapping_key(section: str, sub_section: str | None, topic: str | None, sub_topic: str | None,
                 country: str | None, label, prefix: bool = False) -> str | None:
-    """The frontend key for one display text -- the table row's full dotted path, e.g.
-    `site_characteristic.people.employment.sector.idn.casual_agriculture` -- or None when the
-    table has no row for it.
+    """The frontend key for one display text, or None when the table has no row for it.
 
     `prefix=True` matches a table text that STARTS WITH the label -- for vocabularies where the
     table spells out a range the component's label omits ("Lowland (0-500 m)" vs "Lowland").
