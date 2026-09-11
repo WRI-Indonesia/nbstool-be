@@ -20,6 +20,30 @@ FEASIBILITY_TEMPLATE = "assets/feasibility_v3_template.docx"
 MONITORING_TEMPLATE = "assets/monitoring_v3_template.docx"
 OUTPUT_FOLDER = "generated-file/docx-v3/"
 
+_CORE_PROPS_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+_CUSTOM_PROPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+
+
+def _fix_core_properties(doc: DocxTemplate) -> None:
+    """Re-home core-property elements that python-docx created in the WRONG namespace.
+
+    docxtpl imports docxcompose, whose utils module rebinds python-docx's global `cp` prefix to
+    the custom-properties namespace. The Google-Docs-exported drafts ship no docProps/core.xml,
+    so python-docx synthesises one at render time and its `cp:lastModifiedBy` / `cp:revision`
+    land in that namespace. Word then reports "unreadable content" on every generated file.
+    Templates that already carry a core.xml are unaffected (only text is updated).
+    """
+    element = doc.docx.core_properties._element
+    for child in list(element):
+        if not child.tag.startswith("{" + _CUSTOM_PROPS_NS + "}"):
+            continue
+        # A fresh element (no nsmap of its own) serialises under the root's `cp` prefix; retagging
+        # in place would keep the child's stale xmlns:cp declaration and force an ns0: prefix.
+        fixed = element.makeelement(child.tag.replace(_CUSTOM_PROPS_NS, _CORE_PROPS_NS, 1),
+                                    dict(child.attrib))
+        fixed.text = child.text
+        element.replace(child, fixed)
+
 
 def _generate(template_path: str, suffix: str, session_id: str, analyzer,
               form: dict | None, user_input: dict | None,
@@ -40,6 +64,7 @@ def _generate(template_path: str, suffix: str, session_id: str, analyzer,
 
     doc = DocxTemplate(template_path)
     doc.render(context)
+    _fix_core_properties(doc)
     doc.save(output_path)
     return output_path
 
