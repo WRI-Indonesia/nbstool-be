@@ -1367,6 +1367,13 @@ ECOSYSTEM_NAMES = {
     3: "peatland"
 }
 
+# The notebook's config defines ECOSYSTEM_CLASSES TWICE; on import the LATER one wins:
+# {1: "Dryland", 2: "Mangrove", 3: "Peatland"} (the earlier, threat-section one is
+# THREAT_ECOSYSTEM_CLASSES above). 5.13 reads this name since the recovered cell of `3d2fe02`
+# (2026-09-11, replacing the undefined ECOSYSTEM_LABELS), so its narrative says "this Dryland
+# ecosystem" -- the as-run value, per the port rule for the duplicate-definition bug.
+BENEFIT_ECOSYSTEM_CLASSES = {1: "Dryland", 2: "Mangrove", 3: "Peatland"}
+
 # Change only these if your GeoParquet uses different column names
 SPECIES_COL = "species"
 STATUS_COL = "redlistCategory"

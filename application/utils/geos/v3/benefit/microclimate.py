@@ -8,9 +8,10 @@ NAMESPACE INTERPRETATION, surfaced: the cell is five statements that read `read`
 namespaces -- 5.11 most plausibly (its grid carries `restore` and `change`), with the ecosystem
 layer read the way 5.9/5.10 read it. This port therefore rebuilds that state self-contained ON
 THE PATHWAY GRID (5.11's), reads the threat ecosystem layer onto it, and then runs the cell's
-own statements verbatim. `ECOSYSTEM_LABELS` does not exist in either config; the notebook's
-`ECOSYSTEM_NAMES` (forest/mangrove/peatland) is the label source. Re-check when the notebook
-makes the cell self-contained.
+own statements verbatim. The recovered cell of `3d2fe02` (2026-09-11) labels the ecosystem from
+`ECOSYSTEM_CLASSES` (the as-run, later definition: "Dryland" / "Mangrove" / "Peatland" --
+`BENEFIT_ECOSYSTEM_CLASSES` here), replacing the undefined `ECOSYSTEM_LABELS`; `ECOSYSTEM_NAMES`
+still names the not-applicable message. Re-check when the notebook makes the cell self-contained.
 
 Projected tree-cover gain on the Restore area of one ecosystem: historical gain rate x duration,
 capped at the Restore area itself.
@@ -27,6 +28,7 @@ try:
     from ..config import (
         AOH_GDAL_OPTIONS,
         ECOSYSTEM_CLASS,
+        BENEFIT_ECOSYSTEM_CLASSES,
         ECOSYSTEM_NAMES,
         FOREST_CHANGE_RASTER,
         FOREST_CHANGE_YEARS,
@@ -48,6 +50,7 @@ except ImportError:  # `python microclimate.py`: no package around it
     from config import (
         AOH_GDAL_OPTIONS,
         ECOSYSTEM_CLASS,
+        BENEFIT_ECOSYSTEM_CLASSES,
         ECOSYSTEM_NAMES,
         FOREST_CHANGE_RASTER,
         FOREST_CHANGE_YEARS,
@@ -139,7 +142,7 @@ def analyze_microclimate(aoi: AOI, duration_years: int,
             100
         )
 
-        ecosystem_label = ECOSYSTEM_NAMES[ecosystem_class]
+        ecosystem_label = BENEFIT_ECOSYSTEM_CLASSES[ecosystem_class]
 
     narrative = (
         f"Restoring this {ecosystem_label} ecosystem, with an estimated "

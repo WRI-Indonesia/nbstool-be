@@ -100,7 +100,9 @@ def _carbon_shares(aoi: AOI, carbon: tuple[dict, dict],
 
     ONE BASE FOR ALL FOUR FIELDS: SOIL + AGB + BGB. The three shares sum to 100, soil has one at
     all, and `total_carbon_storage` x `above_ground_biomass_percentage` gives back
-    `above_ground_biomass_number`. On AOI1 that total is 81.2M tCO2e.
+    `above_ground_biomass_number`. UNIT IS tC since notebook `6f03e07` (2026-09-11): 3.1 and 3.2
+    both report tonnes of carbon, so this total is tC as well (AOI1: ~22.1M tC, formerly 81.2M
+    tCO2e -- the 44/12 step now lives in F02-P5 only).
 
     It used to be two bases. `total_carbon_storage` was 3.1's biomass-only 27.3M while the
     percentages already divided by 81.2M, so multiplying one by the other gave a number that

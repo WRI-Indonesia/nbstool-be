@@ -1,11 +1,15 @@
 """
 Component 3.2 Soil Organic Carbon.
 
-Soil organic carbon held in the top 30 cm of the project area, in tCO2e.
+Soil organic carbon held in the top 30 cm of the project area, in tC (tonnes of carbon).
+
+UNIT IS tC SINCE NOTEBOOK `6f03e07` (2026-09-11): the raster arrives as tC/ha and leaves as tC --
+no factor is applied at all. CARBON_FRACTION would double-convert a layer that is already carbon,
+and CO2_PER_C belongs to F02-P5, where the output is an emission or a removal.
 
 Data. SoilGrids depth-interval rasters, `soil_carbon_stock1..5_t_ha_v3.tif` = 0-5, 5-15, 15-30,
-30-60, 60-100 cm. Values are CARBON, tC/ha -- not biomass and not CO2e, so no carbon fraction is
-applied here, only the 44/12 conversion. 3.2 reports 0-30 cm, so it SUMS the top three per pixel
+30-60, 60-100 cm. Values are CARBON, tC/ha -- not biomass, so no carbon fraction is applied
+here. 3.2 reports 0-30 cm, so it SUMS the top three per pixel
 on one shared grid (`like=`), which is what makes a per-pixel sum meaningful.
 
 Decisions locked.
@@ -29,7 +33,6 @@ try:
     from ...common import AOI, load_raster_clipped, not_applicable, safe_pct, sentences
     from ...config import (
         CARBON_COVERAGE_WARN_PCT,
-        CO2_PER_C,
         SOIL_CARBON_0_30_RASTERS,
         SOIL_CARBON_DEPTH_CM,
     )
@@ -41,7 +44,6 @@ except ImportError:  # `python soil_organic_carbon.py`: no package around it
     from common import AOI, load_raster_clipped, not_applicable, safe_pct, sentences
     from config import (
         CARBON_COVERAGE_WARN_PCT,
-        CO2_PER_C,
         SOIL_CARBON_0_30_RASTERS,
         SOIL_CARBON_DEPTH_CM,
     )
@@ -53,7 +55,7 @@ def analyze_soil_organic_carbon(
     aoi: AOI,
     ecosystem_present: set[int] | None = None,
 ) -> tuple[dict, dict]:
-    """Component 3.2. Soil organic carbon in the project area, in tCO2e.
+    """Component 3.2. Soil organic carbon in the project area, in tC.
 
     `ecosystem_present` is the Axis 3 set from 1.1. Pass None when the General stage has not
     been run; the peat caveat is then skipped and flagged rather than silently omitted.
@@ -68,11 +70,11 @@ def analyze_soil_organic_carbon(
 
     stock = sum(lyr.values.filled(0.0).astype(float) for lyr in layers)  # tC/ha, 0-30 cm
 
-    # tC/ha * ha = tC. No carbon fraction: the raster is already carbon, not biomass.
-    soc_tc = float(stock.sum()) * raster.pixel_area_ha
-    total_tco2e = soc_tc * CO2_PER_C
+    # tC/ha * ha = tC. No carbon fraction: the raster is already carbon, not biomass. And no
+    # CO2_PER_C: this component reports carbon, the CO2e conversion is made in F02-P5.
+    total_tc = float(stock.sum()) * raster.pixel_area_ha
 
-    if total_tco2e <= 0:
+    if total_tc <= 0:
         empty = not_applicable(
             "3.2 Soil Organic Carbon",
             "No soil carbon data is available for this project area, so soil organic carbon "
@@ -83,7 +85,7 @@ def analyze_soil_organic_carbon(
         view_results = {'soil_organic_carbon_number': None}
         return results, view_results
 
-    density_tco2e_ha = total_tco2e / aoi.area_ha if aoi.area_ha > 0 else 0.0
+    density_tc_ha = total_tc / aoi.area_ha if aoi.area_ha > 0 else 0.0
     coverage_pct = safe_pct(raster.valid_area_ha, aoi.area_ha)
 
     flags: list[str] = []
@@ -113,9 +115,9 @@ def analyze_soil_organic_carbon(
         )
 
     narrative = sentences(
-        f"The soil in this project area holds approximately {total_tco2e:,.0f} tCO2e of organic "
-        f"carbon in the top {SOIL_CARBON_DEPTH_CM} cm, an average of {density_tco2e_ha:,.0f} "
-        "tCO2e per hectare.",
+        f"The soil in this project area holds approximately {total_tc:,.0f} tC of organic "
+        f"carbon in the top {SOIL_CARBON_DEPTH_CM} cm, an average of {density_tc_ha:,.0f} "
+        "tC per hectare.",
         peat_clause,
     )
 
@@ -123,9 +125,9 @@ def analyze_soil_organic_carbon(
         'narrative': narrative,
         'tables': {},
         'values': {
-            'total_tco2e': total_tco2e,          # headline big number
-            'density_tco2e_ha': density_tco2e_ha,
-            'soc_tc': soc_tc,
+            'total_tc': total_tc,                # headline big number, tonnes of carbon
+            'density_tc_ha': density_tc_ha,
+            'unit': "tC",                        # reporting unit; CO2e conversion happens in F02-P5
             'depth_cm': SOIL_CARBON_DEPTH_CM,
             'coverage_pct': coverage_pct,
             'peatland_present': has_peat,        # True, False, or None when 1.1 is unavailable
@@ -138,7 +140,7 @@ def analyze_soil_organic_carbon(
     # needs SOIL_CARBON_DEPTH_CM from somewhere even though the payload does not carry it.
     # `soil_organic_carbon_percentage` is not emitted here: its denominator is soil + AGB + BGB,
     # which needs 3.1 as well. See `_carbon_shares` in run_climate.py.
-    view_results = {'soil_organic_carbon_number': total_tco2e}
+    view_results = {'soil_organic_carbon_number': total_tc}
 
     return results, view_results
 

@@ -9,9 +9,12 @@ unlike 5.4/5.5 which take it from their gross. The earlier port assumed exactly 
 gross; the data team's rework confirmed it.
 
 Two notebook artefacts carried verbatim: the narrative's missing space ("grosspotential" -- the
-f-string joins "gross" straight onto "potential"), and its `gross_err` variable, which no cell
-defines; the sum of the two grosses is the only reading consistent with the formula and is what
-this function prints there.
+f-string joins "gross" straight onto "potential"), and -- since the recovered cell of `3d2fe02`
+(2026-09-11) -- the gross figure it QUOTES: `gross_er`, 5.2's emission reduction ONLY, even though
+the net it describes is built from both grosses. The earlier port printed the combined gross;
+the cell now names the 5.2 gross, so that is what this prints (flagged to the data team as a
+semantic mismatch, see the open-decisions memory). `values` still carry the combined
+`gross_tco2e` alongside both parts.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ def net_errs(gross_er: float, gross_removal: float, leakage: float, uncertainty:
         f"generate an estimated {net_err:,.0f} tCO2e in emission reductions and removals, "
         f"equivalent to an average of {annual_err:,.0f} tCO2e per year. "
         f"This figure already subtracts leakage and uncertainty deductions from the gross"
-        f"potential of {gross_err:,.0f} tCO2e. It does not yet subtract the buffer pool "
+        f"potential of {gross_er:,.0f} tCO2e. It does not yet subtract the buffer pool "
         f"contribution, which is held to cover non-permanence risk."
     )
 

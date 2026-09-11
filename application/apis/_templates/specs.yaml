@@ -1313,6 +1313,13 @@ paths:
         response.
 
 
+        UNITS: the Climate carbon fields (`total_carbon_storage`,
+        `above_ground_biomass_number`, `below_ground_biomass_number`,
+        `soil_organic_carbon_number`) are tonnes of CARBON (tC) -- the stock
+        as measured. The CO2-equivalent conversion is applied only in the
+        F02-P5 benefit figures, which are tCO2e.
+
+
         The first line is always `preparation` and carries the whole plan in
         `data.processes`, so a client knows every step and its relative cost
         before any work lands. Each following line is one component's slice of

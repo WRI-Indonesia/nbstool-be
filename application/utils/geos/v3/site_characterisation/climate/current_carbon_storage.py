@@ -1,12 +1,17 @@
 """
 Component 3.1 Current Carbon Storage.
 
-Biomass carbon currently stored in the project area, in tCO2e, split into aboveground and
-belowground pools.
+Biomass carbon currently stored in the project area, in tC (tonnes of carbon), split into
+aboveground and belowground pools.
+
+UNIT IS tC SINCE NOTEBOOK `6f03e07` (2026-09-11): only the carbon fraction is applied here. The
+CO2e step (CO2_PER_C, 44/12) deliberately is NOT -- site characterisation reports the stock as
+measured, and the conversion to CO2e belongs to F02-P5 where the output is an emission or a
+removal. Applying it in both places was the double-conversion this split prevents.
 
 Data. `agbd_v3.tif`, continuous DRY BIOMASS DENSITY in Mg/ha, not carbon: GEDI AGBD calibrated
-with Alpha Earth. The carbon fraction (0.47) and the CO2 conversion (44/12) are applied here
-rather than upstream, so both stay visible.
+with Alpha Earth. The carbon fraction (0.47) is applied here rather than upstream, so it stays
+visible in config.
 
 Belowground biomass is DERIVED, not read: BGB = AGB * ROOT_TO_SHOOT_RATIO (0.28). Two
 consequences. BGB shares AGB's grid and coverage exactly, and the pool split is constant by
@@ -24,7 +29,7 @@ Decisions locked.
 - Pool shares are of the biomass total reported here, not of total site carbon. Soil is excluded
   (that is 3.2), so these percentages sum to 100 of a partial accounting.
 
-Downstream use. The headline tCO2e is the baseline stock every Benefit-module projection is
+Downstream use. The headline tC is the baseline stock every Benefit-module projection is
 measured against, and the density per hectare is what makes sites comparable.
 """
 
@@ -38,7 +43,6 @@ try:
         AGB_RASTER,
         CARBON_COVERAGE_WARN_PCT,
         CARBON_FRACTION,
-        CO2_PER_C,
         ROOT_TO_SHOOT_RATIO,
     )
 except ImportError:  # `python current_carbon_storage.py`: no package around it
@@ -51,7 +55,6 @@ except ImportError:  # `python current_carbon_storage.py`: no package around it
         AGB_RASTER,
         CARBON_COVERAGE_WARN_PCT,
         CARBON_FRACTION,
-        CO2_PER_C,
         ROOT_TO_SHOOT_RATIO,
     )
 
@@ -64,13 +67,13 @@ class CarbonPool:
 
     name: str
     biomass_mg: float      # total dry biomass, tonnes
-    storage_tco2e: float   # after carbon fraction and 44/12
+    storage_tc: float      # after the carbon fraction only, tonnes of carbon
     coverage_pct: float    # share of the AOI with a valid pixel
     pct: float = 0.0       # share of the biomass carbon total, filled in once both pools exist
 
 
 def _integrate_pool(name: str, path: str, aoi: AOI) -> CarbonPool:
-    """Integrate one biomass raster over the AOI and convert to tCO2e.
+    """Integrate one biomass raster over the AOI and convert to tC.
 
     Density times area, so the pixel area cancels the per hectare unit:
         Mg/ha * ha = Mg
@@ -83,18 +86,20 @@ def _integrate_pool(name: str, path: str, aoi: AOI) -> CarbonPool:
     values = raster.values.filled(0.0).astype(float)
 
     biomass_mg = float(values.sum()) * raster.pixel_area_ha
-    storage_tco2e = biomass_mg * CARBON_FRACTION * CO2_PER_C
+    # Only the carbon fraction. CO2_PER_C is not applied: this component reports carbon, and the
+    # conversion to CO2e is made downstream in F02-P5 where the unit is a credit.
+    storage_tc = biomass_mg * CARBON_FRACTION
 
     return CarbonPool(
         name=name,
         biomass_mg=biomass_mg,
-        storage_tco2e=storage_tco2e,
+        storage_tc=storage_tc,
         coverage_pct=safe_pct(raster.valid_area_ha, aoi.area_ha),
     )
 
 
 def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
-    """Component 3.1. Biomass carbon currently stored in the project area, in tCO2e."""
+    """Component 3.1. Biomass carbon currently stored in the project area, in tC."""
     # AGB is read; BGB is derived from it by a fixed root-to-shoot ratio (config), because there
     # is no mapped BGB layer yet. Deriving means BGB shares AGB's grid and coverage exactly, and
     # the pool split is constant by construction (see the flag below).
@@ -102,14 +107,14 @@ def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
     bgb_pool = CarbonPool(
         name=CARBON_POOLS[1],
         biomass_mg=agb_pool.biomass_mg * ROOT_TO_SHOOT_RATIO,
-        storage_tco2e=agb_pool.storage_tco2e * ROOT_TO_SHOOT_RATIO,
+        storage_tc=agb_pool.storage_tc * ROOT_TO_SHOOT_RATIO,
         coverage_pct=agb_pool.coverage_pct,
     )
     pools = [agb_pool, bgb_pool]
 
-    total_tco2e = sum(p.storage_tco2e for p in pools)
+    total_tc = sum(p.storage_tc for p in pools)
 
-    if total_tco2e <= 0:
+    if total_tc <= 0:
         empty = not_applicable(
             "3.1 Current Carbon Storage",
             "No biomass data is available for this project area, so current carbon storage "
@@ -123,9 +128,9 @@ def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
 
     # Shares are of the biomass total reported here, not of total site carbon. Soil is excluded,
     # so these percentages sum to 100 of a partial accounting.
-    pools = [replace(p, pct=safe_pct(p.storage_tco2e, total_tco2e)) for p in pools]
+    pools = [replace(p, pct=safe_pct(p.storage_tc, total_tc)) for p in pools]
 
-    density_tco2e_ha = total_tco2e / aoi.area_ha if aoi.area_ha > 0 else 0.0
+    density_tc_ha = total_tc / aoi.area_ha if aoi.area_ha > 0 else 0.0
     coverage_pct = max(p.coverage_pct for p in pools)
 
     # The notebook also builds a derived carbon-density raster here (`3.1_carbon_density...`) for
@@ -154,12 +159,12 @@ def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
     ]
 
     breakdown = oxford_join(
-        f"{p.name.lower()} holds {p.storage_tco2e:,.0f} tCO2e ({fmt_pct(p.pct)})"
+        f"{p.name.lower()} holds {p.storage_tc:,.0f} tC ({fmt_pct(p.pct)})"
         for p in pools
     )
     narrative = (
-        f"This project area currently stores approximately {total_tco2e:,.0f} tCO2e in "
-        f"aboveground and belowground biomass, an average of {density_tco2e_ha:,.0f} tCO2e per "
+        f"This project area currently stores approximately {total_tc:,.0f} tC in "
+        f"aboveground and belowground biomass, an average of {density_tc_ha:,.0f} tC per "
         f"hectare. Of this, {breakdown}. Soil organic carbon is not included."
     )
 
@@ -167,10 +172,11 @@ def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
         'narrative': narrative,
         'tables': {'pools': pools},
         'values': {
-            'total_tco2e': total_tco2e,          # headline big number
-            'density_tco2e_ha': density_tco2e_ha,
+            'total_tc': total_tc,                # headline big number, tonnes of carbon
+            'density_tc_ha': density_tc_ha,
+            'unit': "tC",                        # reporting unit; CO2e conversion happens in F02-P5
             'coverage_pct': coverage_pct,
-            'pool_tco2e': {p.name: p.storage_tco2e for p in pools},
+            'pool_tc': {p.name: p.storage_tc for p in pools},
             'pool_pct': {p.name: p.pct for p in pools},
             'pools_included': list(CARBON_POOLS),
             'pools_excluded': ["deadwood", "litter", "soil organic carbon"],
@@ -186,12 +192,12 @@ def analyze_current_carbon_storage(aoi: AOI) -> tuple[dict, dict]:
     # pools as numbers and nothing that divides by a total -- see `_carbon_shares` in run_climate.py,
     # which owns both once soil exists.
     #
-    # `results` is untouched by that. `values['total_tco2e']` and `values['pool_pct']` keep the
+    # `results` is untouched by that. `values['total_tc']` and `values['pool_pct']` keep the
     # notebook's biomass-only total and its 78.1 / 21.9 shares, which is what the narrative quotes
     # and what "Soil organic carbon is not included" refers to.
     view_results = {
-        'above_ground_biomass_number': agb_pool.storage_tco2e,
-        'below_ground_biomass_number': bgb_pool.storage_tco2e,
+        'above_ground_biomass_number': agb_pool.storage_tc,
+        'below_ground_biomass_number': bgb_pool.storage_tc,
     }
 
     return results, view_results
