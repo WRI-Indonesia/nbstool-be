@@ -108,8 +108,8 @@ _ZERO_MANGROVE = {"mangrove": {"total_area_ha": 0.0, "remaining_forest": _G0, "d
                                "main_pressure": "Not identified", "drivers": _NO_DRIVERS}}
 _ZERO_PEATLAND = {"peatland": {
     "total_area_ha": 0.0, "remaining_forest": _G0, "disturbed": _G0, "converted_loss": _G0,
-    "drivers": {"canal_proximity": "Not identified", "canal_distance_m": None,
-                "drainage_pressure": "Not identified", "fire_risk": "No risk"}}}
+    "drivers": {"canal_proximity": "-", "canal_distance_m": None,
+                "drainage_pressure": "-", "fire_risk": "-"}}}   # no ecosystem -> "-"
 
 _NO_COVERAGE = ("The threat layers do not cover this project area, so no disturbance can be "
                 "reported. The forest disturbance layer reaches only 10 degrees north, which "

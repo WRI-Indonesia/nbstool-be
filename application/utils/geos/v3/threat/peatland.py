@@ -18,7 +18,8 @@ for metre distance, and measured with shapely. On a large AOI that polygonisatio
 part of the whole endpoint -- `peat_canal.tif` is 1.28 GB before clipping.
 
 NOTE the grade vocabularies are wider than the other sections': canal proximity and drainage
-pressure can be "-", and fire risk has five levels including "Very low" and "No risk".
+pressure can be "Not identified", and fire risk has five levels including "Very low" and "No risk".
+When the AOI holds no peatland at all, all three read "-" instead (team call, not notebook).
 
 Body unchanged from the notebook, including its mid-body imports of `shapes` and `shape`. Hoisted
 into `analyze_peatland(aoi)` with the AOI block replaced and the helpers nested so they still close
@@ -471,7 +472,7 @@ def analyze_peatland(aoi: AOI):
         if not np.any(
             current_peatland_mask
         ):
-            return "-", None
+            return "Not identified", None
 
 
         # Drainage canal pixel = 1
@@ -604,7 +605,7 @@ def analyze_peatland(aoi: AOI):
     else:
 
         drainage_pressure = (
-            "-"
+            "Not identified"
         )
 
 
@@ -657,8 +658,23 @@ def analyze_peatland(aoi: AOI):
     else:
 
         fire_risk_level = (
-            "-"
+            "No risk"
         )
+
+
+    # =============================================================================
+    # NO ECOSYSTEM
+    #
+    # No peatland pixel inside the AOI -> the three indicators have nothing to
+    # grade, so they read "-" instead of "Not identified" / "No risk"
+    # (team call 2026-09-11; not in the notebook).
+    # =============================================================================
+
+    if not np.any(peatland_mask):
+
+        canal_proximity = "-"
+        drainage_pressure = "-"
+        fire_risk_level = "-"
 
 
     # =============================================================================

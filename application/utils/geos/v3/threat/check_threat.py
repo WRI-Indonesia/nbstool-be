@@ -220,9 +220,12 @@ if "--live" in sys.argv:
               d["disturbed_area_ha"] <= d["total_area_ha"] + 1e-6)
     pk = by["peatland"]
     check("peatland: indicators are from the documented vocabularies",
-          pk["canal_proximity"] in ("High", "Medium", "Low", "Not identified")
-          and pk["drainage_pressure"] in ("High", "Medium", "Low", "Not identified")
-          and pk["fire_risk"] in ("High", "Medium", "Low", "Very low", "No risk"))
+          pk["canal_proximity"] in ("High", "Medium", "Low", "Not identified", "-")
+          and pk["drainage_pressure"] in ("High", "Medium", "Low", "Not identified", "-")
+          and pk["fire_risk"] in ("High", "Medium", "Low", "Very low", "No risk", "-"))
+    if pk["total_area_ha"] == 0:
+        check("peatland: no ecosystem -> all three indicators read '-'",
+              (pk["canal_proximity"], pk["drainage_pressure"], pk["fire_risk"]) == ("-", "-", "-"))
 
 print(f"\n{PASS}/{PASS + FAIL} checks passed")
 sys.exit(0 if FAIL == 0 else 1)

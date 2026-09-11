@@ -3964,12 +3964,12 @@ components:
         converted_loss_percentage: {type: number}
         canal_proximity:
           type: string
-          enum: [High, Medium, Low, Not identified]
+          enum: [High, Medium, Low, Not identified, "-"]
           description: >-
             from `canal_distance_m`: High at or under 500 m, Medium to 1 km, Low
-            beyond. "Not identified" when the AOI holds no current peat forest
-            to measure from; "Low" also covers the case where no canal is found
-            at all.
+            beyond. "Not identified" when the AOI holds peatland but no current
+            peat forest to measure from; "Low" also covers the case where no
+            canal is found at all. "-" when the AOI holds no peatland.
         canal_distance_m:
           type: number
           nullable: true
@@ -3982,16 +3982,18 @@ components:
             AOI's own UTM zone, not a raster one.
         drainage_pressure:
           type: string
-          enum: [High, Medium, Low, Not identified]
+          enum: [High, Medium, Low, Not identified, "-"]
           description: >-
             highest canal-density class present in the peatland, from
-            `peat_canals_density_v3.tif` (3 High, 2 Medium, 1 Low).
+            `peat_canals_density_v3.tif` (3 High, 2 Medium, 1 Low). "-" when
+            the AOI holds no peatland.
         fire_risk:
           type: string
-          enum: [High, Medium, Low, Very low, No risk]
+          enum: [High, Medium, Low, Very low, No risk, "-"]
           description: >-
             highest fire-risk class present in the peatland. FIVE levels, not
-            three -- wider than the other two indicators.
+            three -- wider than the other two indicators. "-" when the AOI
+            holds no peatland.
         badge_keys:
           type: object
           description: frontend keys for the three indicator badges, from the
