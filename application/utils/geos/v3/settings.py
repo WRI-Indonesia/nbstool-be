@@ -90,7 +90,11 @@ def _get_engine():
 
 
 def get_setting(name: str) -> str:
-    """One row of tbl_master_settings by name, cached for the life of the process.
+    """One row of tbl_master_settings by name, cached for the life of the REQUEST.
+
+    Not for the life of the process: `refresh()` drops the cache at the start of every request,
+    so a repointed V3_BUCKET is picked up by the next request instead of needing a pm2 reload
+    (which under load cuts in-flight streams short at kill_timeout).
 
     Raises rather than falling back to a default. A missing row means the environment has not
     been configured, and a silent default would send every raster read somewhere unintended.
@@ -138,6 +142,25 @@ def get_setting(name: str) -> str:
     finally:
         if leading:
             _cache_lock.release()
+
+
+def refresh() -> None:
+    """Forget every cached setting, so the next read goes to the database.
+
+    WIRED TO before_request (see apis/geo_apis/__init__.py), which makes the cache request
+    scoped: one query per setting per request, and a row changed in tbl_master_settings takes
+    effect on the very next request with no restart.
+
+    THE CACHE CANNOT SIMPLY BE REMOVED. `layer_path` resolves the root for EVERY layer, and
+    habitat area calls it once per species -- about 473 reads in a single analysis run. Without
+    the cache that is 473 queries per run on an engine sized `pool_size=1`, serialised; the
+    docstring above records what the unlocked version already cost on a cold process.
+
+    Clearing while other requests are mid-run is safe: they simply re-read and repopulate. It
+    does mean a run that straddles a change can resolve some layers against the old root and
+    some against the new, which is harmless while both roots hold identical objects.
+    """
+    _cache.clear()
 
 
 def layer_path(layer: str) -> str:
