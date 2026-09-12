@@ -178,6 +178,9 @@ class SessionsAuth(db.Model):
         return localized_dt_string(created_at_utc, use_tz=get_local_utcoffset())
 
 
+PROJECT_PRIVACY_LEVELS = (1, 2, 3)
+
+
 class UserSessions(db.Model):
     __tablename__ = "tbl_user_sessions"
     id = db.Column(db.Integer, primary_key=True)
@@ -189,6 +192,9 @@ class UserSessions(db.Model):
     project_description = db.Column(db.Text, nullable=True)
 
     is_project = db.Column(db.Boolean, default=False)
+
+    # 1, 2 or 3 (see PROJECT_PRIVACY_LEVELS); new rows start at 1
+    privacy_level = db.Column(db.SmallInteger, default=1)
 
     # which analysis engine produced this session's DataAnalyzer payloads: 'v3' once any v3
     # endpoint persisted, NULL for legacy rows and sessions with no calculation yet

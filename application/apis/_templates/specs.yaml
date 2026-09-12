@@ -1822,6 +1822,70 @@ paths:
                     - c6276049-3d5f-4396-933a-a0318b2b2e09
         required: true
 
+  /projects/privacy:
+    patch:
+      tags:
+        - Project module
+      summary: update project privacy level
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: UpdateProjectPrivacyOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - message
+                      - project_id
+                      - privacy_level
+                    properties:
+                      message:
+                        type: string
+                        examples:
+                          - Project privacy is updated successfully
+                      project_id:
+                        type: string
+                        examples:
+                          - c6276049-3d5f-4396-933a-a0318b2b2e09
+                      privacy_level:
+                        $ref: "#/components/schemas/PrivacyLevel"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: set a project's privacy level; only the project owner can
+        change it
+      operationId: updateProjectPrivacy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_id
+                - privacy_level
+              properties:
+                project_id:
+                  type: string
+                  examples:
+                    - c6276049-3d5f-4396-933a-a0318b2b2e09
+                privacy_level:
+                  $ref: "#/components/schemas/PrivacyLevel"
+        required: true
+
   /projects/bind:
     post:
       tags:
@@ -3407,6 +3471,10 @@ components:
           examples:
             - 30m
       description: a single map layer
+    PrivacyLevel:
+      type: integer
+      enum: [1, 2, 3]
+      description: project privacy level; new projects start at 1
     ProjectEcosystem:
       type: object
       required:
@@ -3476,6 +3544,8 @@ components:
         documents:
           type: integer
           description: number of generated documents
+        privacy_level:
+          $ref: "#/components/schemas/PrivacyLevel"
         boundary_map_url:
           type: string
           description: path of the card picture (`GET /projects/boundary-map`), to
@@ -3573,6 +3643,8 @@ components:
               type: integer
             indicators:
               type: integer
+        privacy_level:
+          $ref: "#/components/schemas/PrivacyLevel"
         created_at:
           type: [string, "null"]
         updated_at:
@@ -3610,8 +3682,7 @@ components:
       description: >-
         the F04.1 detail screen in ONE request -- Overview tab fields plus
         the Analysis tab's stored sections under `analysis`. Not served yet
-        (no backend data): collaborators, privacy level, history/audit log,
-        MRV entries.
+        (no backend data): collaborators, history/audit log, MRV entries.
     Document:
       type: object
       required:

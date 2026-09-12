@@ -3,7 +3,7 @@ from flask import jsonify, request, make_response, current_app, g as g_var, send
 from flask_login import current_user
 from . import project_apis_blueprint
 from ... import db
-from ...models.user_models.models import UserSessions
+from ...models.user_models.models import UserSessions, PROJECT_PRIVACY_LEVELS
 from ...models.master_models.models import DocumentList, DocumentData, Organization
 from ...models.geos_models.models import DataAnalyzer, Polygons, MapExplorer
 from ...models.user_models.models import User
@@ -265,8 +265,8 @@ def projects_bind_project():
 # v3 project readers. The dashboard (F04) and detail (F04.1)
 # screens read the v3 JSONB shapes; the old readers went through the v2 pickle columns and
 # crash on a v3 row. UI data with no backend source yet -- collaborators, monitoring entries,
-# privacy level, history/audit log -- is simply absent from the payload until its feature
-# exists; the frontend skips what is not there.
+# history/audit log -- is simply absent from the payload until its feature exists; the
+# frontend skips what is not there.
 # ---------------------------------------------------------------------------------------------
 
 _ECO_SELECTION_KEYS = {'forest': 'Forest', 'mangrove': 'Mangrove', 'peatland': 'Peatland'}
@@ -410,6 +410,7 @@ def projects_list():
                 'monitoring_status': ('Monitoring Active' if project.session_id in monitored
                                       else 'Waiting for Monitoring Plan'),
                 'documents': doc_counts.get(project.session_id, 0),
+                'privacy_level': project.privacy_level,
                 'boundary_map_url': _boundary_map_url(project.session_id),
                 'created_at': _iso(project.created_at),
                 'updated_at': _iso(project.updated_at or project.created_at),
@@ -535,8 +536,7 @@ def projects_details():
             for d in DocumentList.find_by_project_id(session_id) or []
         ]
 
-        # No backend data yet, so no field: collaborators, privacy level, history/audit log,
-        # MRV entries.
+        # No backend data yet, so no field: collaborators, history/audit log, MRV entries.
         results = {
             'polygon': geom,
             'project_id': session_id,
@@ -555,6 +555,7 @@ def projects_details():
             },
             'documents': documents,
             'monitoring_plan': monitoring_plan,
+            'privacy_level': known_project.privacy_level,
             'created_at': _iso(known_project.created_at),
             'updated_at': _iso(known_project.updated_at or known_project.created_at),
             # The Analysis tab's data, from the analyzer row this response already loaded --
@@ -611,6 +612,51 @@ def projects_update():
             'message': 'Project is updated successfully',
             'project_id': project_id,
             'project_name': project_name
+        }
+
+        return make_response(jsonify(success_handler({ 'result': results }, status_code=200)), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
+@project_apis_blueprint.route('/privacy', methods=['PATCH'])
+@cross_origin()
+def projects_update_privacy():
+    g_var.__api_name__ = 'projects_update_privacy'
+
+    try:
+        if not current_user.is_authenticated:
+            return make_response(jsonify(app_exception_handler('not logged in', 401)), 401)
+
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+
+        data = request.get_json()
+
+        project_id = data.get('project_id')
+        privacy_level = data.get('privacy_level')
+        # bool is an int subclass: `true` must not pass as 1
+        if isinstance(privacy_level, bool) or privacy_level not in PROJECT_PRIVACY_LEVELS:
+            raise AppMessageException('privacy_level must be one of {}'.format(list(PROJECT_PRIVACY_LEVELS)))
+
+        known_project = UserSessions.find_by_session_id_is_project(project_id)
+        if not known_project:
+            raise AppMessageException('fail. project not found')
+        if known_project.user_id != current_user.id:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can change its privacy', 403)), 403)
+
+        known_project.privacy_level = privacy_level
+        known_project.updated_by = current_user.id
+
+        db.session.add(known_project)
+        db.session.commit()
+
+        results = {
+            'message': 'Project privacy is updated successfully',
+            'project_id': project_id,
+            'privacy_level': privacy_level
         }
 
         return make_response(jsonify(success_handler({ 'result': results }, status_code=200)), 200)
