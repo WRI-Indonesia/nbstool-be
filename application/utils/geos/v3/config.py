@@ -1399,6 +1399,17 @@ FOREST_CHANGE_RASTER = "threat/forest_change_v3.tif"
 GAIN_CODE = 4
 DEGRADATION_CODE = 2
 
+# The raster's full legend, for the feasibility document's Figure 1 (threat/disturbance_map.py).
+# Codes cross-tabulated against the threat rasters: 1 = historical remaining forest, undisturbed;
+# 2 = current forest with disturbance > 0; 3 = historical forest loss; 4 = forest gain. Colours
+# follow the F02-P3 screen's map card.
+FOREST_CHANGE_CLASSES = {
+    1: ("Remaining", "#3f6b3b"),
+    DEGRADATION_CODE: ("Disturbed", "#e5a63f"),
+    3: ("Forest loss", "#cf4a3b"),
+    GAIN_CODE: ("Forest gain", "#6ed88a"),
+}
+
 # 5.12. FuturePop is one band per 5 years, 2025..2100; the flood risk layer is the reference
 # grid, and exposure counts classes 4 (High) and 5 (Very High) of the threat risk layers.
 POP_BASE_YEAR = 2025                #<SET: baseline year based on project duration>

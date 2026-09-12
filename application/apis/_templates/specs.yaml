@@ -1881,7 +1881,9 @@ paths:
         form draft with the analyser prefill (see
         `GET /documents/feasibility/v3`) so the F03 form and the docx
         template have their initial data from the moment the session becomes
-        a project. A draft the user already saved is never overwritten.
+        a project. A draft the user already saved is never overwritten. It
+        also draws and stores the project boundary map picture served by
+        `GET /projects/boundary-map` (a few seconds).
 
         `project_name` is optional: when omitted, a name is derived from the
         v3 analyser's administrative result ("<District> district Project in
@@ -1971,6 +1973,35 @@ paths:
         on (Monitoring Status / Ecosystem / Country, search, last-updated
         and area sorts) -- filtering happens client-side over this list.
       operationId: listProjects
+
+  /projects/boundary-map:
+    get:
+      tags:
+        - Project module
+      summary: project boundary map picture
+      responses:
+        "200":
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+          description: PNG, wide frame (about 2.8:1)
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/project_id"
+      description: >-
+        the project area on a basemap with its ecosystem types (Dryland forest /
+        Mangrove / Peatland / Other) and outline -- the dashboard card picture,
+        the same image as Figure 2 of the feasibility document. Drawn at
+        `POST /projects/bind` and redrawn at every document generate. A
+        project whose map is not there (never bound, or the drawing failed)
+        gets the stock project picture instead, so the card always has an
+        image; 400 only for an unknown project id.
+      operationId: projectBoundaryMap
 
   /projects/documents:
     get:
@@ -3445,6 +3476,12 @@ components:
         documents:
           type: integer
           description: number of generated documents
+        boundary_map_url:
+          type: string
+          description: path of the card picture (`GET /projects/boundary-map`), to
+            be resolved against the API base the client called
+          examples:
+            - /projects/boundary-map?project_id=c6276049-3d5f-4396-933a-a0318b2b2e09
         created_at:
           type: [string, "null"]
         updated_at:
@@ -3485,6 +3522,10 @@ components:
           type: [string, "null"]
         area_ha:
           type: [number, "null"]
+        boundary_map_url:
+          type: string
+          description: path of the project boundary map picture (`GET
+            /projects/boundary-map`), to be resolved against the API base
         monitoring_status:
           type: string
           enum: [Monitoring Active, Waiting for Monitoring Plan]

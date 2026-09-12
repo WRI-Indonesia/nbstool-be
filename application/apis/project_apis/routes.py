@@ -1,5 +1,5 @@
 # application/apis/project_apis/routes.py
-from flask import jsonify, request, make_response, g as g_var
+from flask import jsonify, request, make_response, current_app, g as g_var, send_file, url_for
 from flask_login import current_user
 from . import project_apis_blueprint
 from ... import db
@@ -25,6 +25,8 @@ from ...utils.common import app_exception_handler, success_handler
 #
 # from ..geo_apis.utils import GeoLogic
 from ...utils.document_generator.v3.prefill import feasibility_prefill
+from ...utils.document_generator.v3 import boundary_map_path, generate_boundary_map
+from ...utils.cloud_storage import CloudStorage
 
 
 # legacy: /nbsapi/project-management/bind-project [POST]
@@ -236,6 +238,14 @@ def projects_bind_project():
 
         db.session.commit()
 
+        # The dashboard card picture, drawn from the polygon and uploaded (see /boundary-map).
+        # Never fails the bind: without it the card shows the stock picture, and the next
+        # document generate draws it again.
+        try:
+            generate_boundary_map(session_id)
+        except Exception as e:
+            current_app.logger.warning('boundary map not generated for {} | {}'.format(session_id, str(e)))
+
         results = {
             'message': message,
             'project_id': session_id,
@@ -322,6 +332,22 @@ def _iso(dt):
 
 
 # legacy: /nbsapi/project-management/project-list [POST]
+# Stock picture served while a project has no map of its own, sitting in the same GCS folder
+# (uploaded by hand, not generated).
+FALLBACK_BOUNDARY_MAP = "IMAGE_PROJECT MAP"
+
+
+def _present(path):
+    # CloudStorage.download leaves an EMPTY file behind on a miss.
+    return os.path.exists(path) and os.path.getsize(path) > 0
+
+
+def _boundary_map_url(session_id):
+    # A PATH, not an absolute URL, for the same reason the analysis retry_url is one: behind the
+    # proxy `url_root` is the internal host. The client resolves it against the API base.
+    return url_for('project_apis.projects_boundary_map', project_id=session_id)
+
+
 @project_apis_blueprint.route('/list', methods=['GET'])
 @cross_origin()
 def projects_list():
@@ -384,6 +410,7 @@ def projects_list():
                 'monitoring_status': ('Monitoring Active' if project.session_id in monitored
                                       else 'Waiting for Monitoring Plan'),
                 'documents': doc_counts.get(project.session_id, 0),
+                'boundary_map_url': _boundary_map_url(project.session_id),
                 'created_at': _iso(project.created_at),
                 'updated_at': _iso(project.updated_at or project.created_at),
             })
@@ -411,6 +438,40 @@ def projects_list():
 
 
 # legacy: /nbsapi/project-management/project-detail [POST]
+# The project boundary map picture (Figure 2 of the feasibility document; drawn and uploaded at
+# /bind and again at every document generate), proxied from GCS for the dashboard card. Not login-gated,
+# like the document downloads: the card's <img> cannot carry the session cookie cross-origin.
+@project_apis_blueprint.route('/boundary-map', methods=['GET'])
+@cross_origin()
+def projects_boundary_map():
+    g_var.__api_name__ = 'projects_boundary_map'
+
+    try:
+        session_id = request.args.get('project_id')
+        if not session_id:
+            raise AppMessageException('please provide project_id')
+        if not Polygons.find_by_session_id(session_id):
+            raise AppMessageException('fail, project id Not found')
+
+        gcs = CloudStorage()
+        path = boundary_map_path(session_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        gcs.download(path)
+        if not _present(path):
+            # Not drawn (yet, or it failed at /bind): the stock picture, fetched once.
+            path = boundary_map_path(FALLBACK_BOUNDARY_MAP)
+            if not _present(path):
+                gcs.download(path)
+            if not _present(path):
+                raise AppMessageException('map not available')
+
+        return send_file(os.path.abspath(path), mimetype='image/png')
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
 @project_apis_blueprint.route('', methods=['GET'])
 @cross_origin()
 def projects_details():
@@ -485,6 +546,7 @@ def projects_details():
             'province': site.get('province'),
             'district': site.get('district'),
             'area_ha': _project_area_ha(analyzer, session_id),
+            'boundary_map_url': _boundary_map_url(session_id),
             'monitoring_status': _monitoring_status(session_id),
             'ecosystems': _project_ecosystems(analyzer),
             'intervention': {

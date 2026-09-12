@@ -35,6 +35,7 @@ import sys
 from copy import deepcopy
 
 from docx import Document
+from docx.oxml.ns import qn
 
 BRACKET = re.compile(r"\[([^\[\]]+)\]")
 ONLY_IF = re.compile(r"\[only if ([^\[\]]+?)\]")
@@ -369,12 +370,30 @@ def _inject_indicator_rows(doc) -> int:
     return count
 
 
+# Figures: the drafts carry a stand-in picture in the paragraph right before each of these
+# captions. The picture is swapped for an image variable the generator fills with an InlineImage
+# (see __init__._generate); the paragraph keeps its centred alignment. Both drafts have Figure 1,
+# only the feasibility one has Figure 2.
+FIGURE_VARIABLES = {"Figure 1.": "disturbance_map", "Figure 2.": "boundary_map"}
+
+
+def _convert_figures(doc) -> None:
+    paragraphs = doc.paragraphs
+    for i in range(1, len(paragraphs)):
+        for caption, variable in FIGURE_VARIABLES.items():
+            placeholder = paragraphs[i - 1]
+            if (paragraphs[i].text.startswith(caption)
+                    and placeholder._p.findall(".//" + qn("w:drawing"))):
+                _rewrite_paragraph(placeholder, "{{ " + variable + " }}")
+
+
 def convert(source_path: str, output_path: str, occurrences: dict | None = None) -> None:
     doc = Document(source_path)
     counters: dict = {}
 
     # Before anything counts occurrences: the authoring aid is not document content.
     _drop_reference_table(doc)
+    _convert_figures(doc)
 
     # Body content in DOCUMENT ORDER -- occurrence counting depends on it. Loop rows are wrapped
     # before a table's paragraphs are converted, so the loop cells get their own expressions.
