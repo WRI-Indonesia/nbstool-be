@@ -690,13 +690,13 @@ def analyze_mangrove(aoi: AOI):
             "drivers": {
 
                 "non_natural":
-                    non_natural_drivers,
+                    non_natural_drivers if non_natural_drivers else ['None detected'],
 
                 "natural":
-                    natural_drivers,
+                    natural_drivers if natural_drivers else ['None detected'],
 
                 "other":
-                    other_drivers
+                    other_drivers if other_drivers else ['None detected']
             }
         }
     }
@@ -715,13 +715,29 @@ if __name__ == "__main__":
 
     try:
         from common import prepare_aoi, to_jsonable
+        from db import mapping_key
     except ImportError:
         from ..common import prepare_aoi, to_jsonable
+        from ..db import mapping_key
 
     aoi_path = sys.argv[1] if len(sys.argv) > 1 else r"D:\Documents\ALL\_test\nbs\AOI1.shp"
     if aoi_path.lower().endswith(".zip"):
         aoi_path = "zip://" + os.path.abspath(aoi_path).replace("\\", "/")
 
     aoi = prepare_aoi(gpd.read_file(aoi_path))
+    result = analyze_mangrove(aoi)
+
+    # Frontend keys from public.tbl_list_mapping_key, added beside the texts exactly as
+    # run_threat's Mangrove tab does (the table calls the non-natural list "human"). The
+    # analysis body above stays notebook-identical; the keys are a seam concern.
+    raw = result["mangrove"]
+    raw["main_pressure_key"] = mapping_key("threat", "mangrove", "driver", "human", None,
+                                           raw["main_pressure"])
+    raw["driver_keys"] = {
+        wire: [mapping_key("threat", "mangrove", "driver", group, None, label)
+               for label in raw["drivers"][wire]]
+        for wire, group in (("non_natural", "human"), ("natural", "natural"), ("other", "other"))
+    }
+
     print(f"AOI: {aoi.area_ha:,.0f} ha, supplied in {aoi.source_crs}\n")
-    print(json.dumps(to_jsonable(analyze_mangrove(aoi)), indent=2, ensure_ascii=False))
+    print(json.dumps(to_jsonable(result), indent=2, ensure_ascii=False))
