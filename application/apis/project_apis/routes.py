@@ -16,6 +16,9 @@ import gc
 import json
 import uuid
 import string
+import threading
+import time
+from decimal import Decimal
 
 from ...utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ...utils.common import app_exception_handler, success_handler
@@ -471,6 +474,68 @@ def projects_boundary_map():
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
+# ---------------------------------------------------------------------------------------------
+# Landing-page statistics. PUBLIC (no login), so built to be hit hard by anyone:
+# - one fixed `SELECT *` over the `public.vwstatistics` view; nothing from the request (query
+#   string, body, headers) reaches it. The view IS the contract: its column names are the JSON
+#   keys and a column added to the view ships without a code deploy;
+# - one DB round-trip per _STATS_TTL seconds per worker whatever the request rate; the lock
+#   stops a cold-cache stampede across the gunicorn threads; while the DB is failing the last
+#   good copy is served for another TTL, so this route cannot be used to drain the pool;
+# - the body is the view's one row plus a timestamp, and the failure message is the same fixed
+#   string in every environment (no exception text, no SQL, no table names);
+# - GET only (Flask adds HEAD/OPTIONS), browsers and CDN may cache for the same TTL.
+# What is counted, what it is called and the excluded test accounts are the view's business.
+# ---------------------------------------------------------------------------------------------
+
+_STATS_TTL = 300  # seconds
+_STATS_SQL = db.text('SELECT * FROM public.vwstatistics')
+_stats_cache = {'at': 0.0, 'data': None}
+_stats_lock = threading.Lock()
+
+
+def _stats_fresh():
+    return _stats_cache['data'] is not None and time.monotonic() - _stats_cache['at'] < _STATS_TTL
+
+
+def _landing_statistics():
+    if _stats_fresh():
+        return _stats_cache['data']
+    with _stats_lock:
+        if _stats_fresh():  # another thread filled it while we waited
+            return _stats_cache['data']
+        try:
+            row = db.session.execute(_STATS_SQL).mappings().one()
+            data = {k: (float(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
+            data['as_of'] = get_date().isoformat()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception('landing statistics query failed')
+            if _stats_cache['data'] is None:
+                raise
+            data = _stats_cache['data']  # stale beats a broken landing page
+        _stats_cache.update(at=time.monotonic(), data=data)
+        return data
+
+
+@project_apis_blueprint.route('/statistics', methods=['GET'])
+@cross_origin()
+def projects_statistics():
+    g_var.__api_name__ = 'projects_statistics'
+
+    try:
+        response = make_response(jsonify(success_handler({ 'result': _landing_statistics() }, status_code=200)), 200)
+        response.headers['Cache-Control'] = 'public, max-age={}'.format(_STATS_TTL)
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except Exception:
+        # Fixed text whatever the environment; the cause is already in the server log.
+        response = make_response(jsonify(app_exception_handler(AppMessageException('statistics unavailable'), services=g_var.__api_name__)), 503)
+        response.headers['Retry-After'] = '60'
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
 
 @project_apis_blueprint.route('', methods=['GET'])

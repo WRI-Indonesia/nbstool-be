@@ -2067,6 +2067,73 @@ paths:
         image; 400 only for an unknown project id.
       operationId: projectBoundaryMap
 
+  /projects/statistics:
+    get:
+      tags:
+        - Project module
+      summary: landing-page statistics
+      responses:
+        "200":
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=300
+          content:
+            application/json:
+              schema:
+                type: object
+                title: StatisticsOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    description: one key per column of the statistics view,
+                      named exactly as the column is; a column added to the
+                      view appears here with no API change. Plus `as_of`.
+                    required:
+                      - as_of
+                    properties:
+                      as_of:
+                        type: string
+                        format: date-time
+                        description: when these numbers were computed (UTC); they
+                          refresh about every 5 minutes
+                    additionalProperties:
+                      type: number
+                    example:
+                      Organization Count: 226
+                      Organization has project Count: 118
+                      Project Count: 167
+                      User Count: 260
+                      Total Area: 524054.82
+                      Total Province: 8
+                      Total Ecosystem: 3
+                      as_of: "2026-09-14T00:37:16"
+          description: Success
+        "503":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: statistics unavailable
+          description: numbers not available right now, retry after the
+            `Retry-After` seconds
+      parameters: []
+      description: >-
+        the public counters for the landing page -- organisations, projects,
+        users, area (hectares), provinces, ecosystems. No login and no
+        parameters; the numbers refresh about every 5 minutes and the
+        response is cacheable for that long (`Cache-Control`).
+      operationId: landingStatistics
+
   /projects/documents:
     get:
       tags:
