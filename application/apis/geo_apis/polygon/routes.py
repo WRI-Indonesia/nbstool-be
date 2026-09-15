@@ -71,7 +71,7 @@ def geo_post_polygon():
         
         data = request.get_json()
 
-        user_id = data.get('user_id') if data.get('user_id') else 0
+        user_id = current_user.id if current_user.is_authenticated else 0
         session_id = data.get('session_id')
         geom_type = data.get('geometry').get('type').lower()
         is_debug = data.get('is_debug')
