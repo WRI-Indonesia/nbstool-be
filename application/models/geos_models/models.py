@@ -44,8 +44,8 @@ class Polygons(db.Model):
         if current_user.is_authenticated:
             size_limit = current_user.size_limit if current_user.size_limit else size_limit
         
-        if self.project_area_size and int(self.project_area_size) > size_limit:
-            raise AppMessageException('project area exceed user size area limit')
+        # if self.project_area_size and int(self.project_area_size) > size_limit:
+        #     raise AppMessageException('project area exceed user size area limit')
 
 
 class MapExplorer(db.Model):
