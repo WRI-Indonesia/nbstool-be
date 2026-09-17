@@ -472,6 +472,51 @@ paths:
       description: get Google Analytics 4 statistics report
       operationId: ga4Report
 
+  /users/email-notify:
+    post:
+      tags:
+        - User module
+      summary: email notify
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: EmailNotifyOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: store an email address with optional JSON details for notification purposes
+      operationId: emailNotify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  maxLength: 255
+                  examples:
+                    - user@mail.com
+                details:
+                  type: object
+                  description: optional JSON object or array
+                  examples:
+                    - { "source": "landing-page", "topic": "launch" }
+        required: true
+
   /geos/polygon:
     get:
       tags:
@@ -1919,6 +1964,57 @@ paths:
                   type: string
                   examples:
                     - d1234567-89ab-cdef-0123-456789abcdef
+        required: true
+
+  /incubators/review/v3:
+    post:
+      tags:
+        - Incubator module
+      summary: submit project for review (v3)
+      security:
+        - Authorization: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: SubmitReviewV3Ok
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - message_id
+                    properties:
+                      message_id:
+                        type: string
+                        description: Pub/Sub message id of the published review request
+                        examples:
+                          - "1234567890123456"
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "401":
+          $ref: "#/components/responses/No Auth"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters: []
+      description: submit a project (by session) for incubator review; validates ownership then publishes a review request to GCP Pub/Sub (no Drive upload or email sent by this endpoint)
+      operationId: submitForReviewV3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+              properties:
+                session_id:
+                  type: string
+                  examples:
+                    - b06e52c5-694d-4890-9a0e-ae9e4a581da5
         required: true
 
 openapi: 3.1.0

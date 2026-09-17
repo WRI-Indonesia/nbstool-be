@@ -22,9 +22,11 @@ from ...utils.common.mail import BaseMail, EMailIncubatorsReviewToIncubator, EMa
 
 from ...utils.cloud_gdrive import CloudDrive
 from ...utils.cloud_storage import CloudStorage
+from ...utils.cloud_pubsub import CloudPubSub
 
 drive = CloudDrive()
 gcs = CloudStorage()
+pubsub = CloudPubSub()
 
 @incubator_apis_blueprint.route('/review', methods=['POST'])
 @cross_origin()
@@ -124,6 +126,85 @@ def post_incubator_review():
         # end prepare mail
 
         results = { }
+
+        return make_response(jsonify(success_handler({ 'result': results })), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+@incubator_apis_blueprint.route('/review/v3', methods=['POST'])
+@cross_origin()
+def post_incubator_review_v3():
+    g_var.__api_name__ = 'post_incubator_review_v3'
+
+    g_var.__log_it__ = True
+    g_var.__session_id__ = None
+    g_var.__description_data__ = {}
+    try:
+        g_var.__request_data__ = request.get_json()
+    except:
+        pass
+
+    try:
+        if not current_user.is_authenticated:
+            return make_response(jsonify(app_exception_handler('not logged in', 401)), 401)
+
+        if not request.is_json:
+            raise AppMessageException('please provide json data')
+        
+        data = request.get_json()
+
+        session_id = data.get('session_id')
+
+        if not session_id:
+            raise AppMessageException('please provide session id')
+        
+        user_sessions = UserSessions.find_by_session_id(session_id)
+        if not user_sessions:
+            raise AppMessageException('sorry, you dont have permission to submit this project for incubators (1)')
+        if user_sessions.user_id != current_user.id:
+            raise AppMessageException('sorry, you dont have permission to submit this project for incubators (2)')
+        
+        g_var.__session_id__ = session_id
+        
+        organization_type = Organization.query.filter_by(id=current_user.organization_type_id).first()
+        user = current_user.to_json()
+
+        if current_user.extended_data:
+            user.update(current_user.extended_data)
+
+        # prepare incubators email
+        INCUBATOR_EMAIL_LIST = Settings.find_by_name(name='INCUBATOR_EMAIL_LIST')
+        try:
+            INCUBATOR_EMAIL_LIST = INCUBATOR_EMAIL_LIST.value
+        except Exception as e:
+            current_app.logger.info('incubator review v3: {}'.format(str(e)))
+            raise Exception('incubator review v3: incubator email list invalid or not found')
+        # end prepare incubators email
+
+        # prepare pubsub topic
+        INCUBATOR_PUBSUB_TOPIC = Settings.find_by_name(name='INCUBATOR_PUBSUB_TOPIC')
+        try:
+            INCUBATOR_PUBSUB_TOPIC = INCUBATOR_PUBSUB_TOPIC.value
+        except Exception as e:
+            current_app.logger.info('incubator review v3: {}'.format(str(e)))
+            raise Exception('incubator review v3: incubator pubsub topic invalid or not found')
+        # end prepare pubsub topic
+
+        # publish review request
+        message = {
+            'session_id': session_id,
+            'project_name': user_sessions.project_name,
+            'user': user,
+            'organization_type': organization_type.to_json() if organization_type else None,
+            'incubator_email_list': INCUBATOR_EMAIL_LIST,
+            'requested_at': get_date().isoformat(),
+        }
+        message_id = pubsub.publish(INCUBATOR_PUBSUB_TOPIC, message, event='incubator_review', session_id=session_id)
+        # end publish review request
+
+        results = { 'message_id': message_id }
 
         return make_response(jsonify(success_handler({ 'result': results })), 200)
     except AppMessageException as e:
