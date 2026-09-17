@@ -7,8 +7,10 @@
 #
 # Flow (unchanged from legacy): build image -> push -> create new instance
 # template -> MIG rolling update (replacement-method substitute). This RECREATES
-# VMs — beta container on each VM comes back via the startup script
-# (build_runner/startup-beta.sh) baked into the new template.
+# VMs. Startup script (build_runner/startup-beta.sh) is currently NOT attached
+# to the template — new VMs boot with the production container only. Re-enable
+# by adding `--metadata-from-file startup-script=build_runner/startup-beta.sh`
+# to the create-with-container call below.
 #
 # Differences from the generated legacy config, on purpose:
 #   - template pins the image to :production-$SHORT_SHA (immutable) instead of
@@ -60,7 +62,6 @@ steps:
         --shielded-integrity-monitoring --shielded-vtpm \
         --scopes default,storage-full,cloud-platform,https://www.googleapis.com/auth/drive \
         --service-account ${_VM_SERVICE_ACCOUNT} \
-        --metadata-from-file startup-script=build_runner/startup-beta.sh \
         --container-env "PORT=${_PORT},SECRET_KEY=$$PRODUCTION_SECRET_KEY,CONFIGURATION_SETUP=$$PRODUCTION_CONFIGURATION_SETUP,DB_SQLALCHEMY_URI=$$PRODUCTION_DB_SQLALCHEMY_URI,GIS_DB_SQLALCHEMY_URI=$$PRODUCTION_GIS_DB_SQLALCHEMY_URI,MAIL_BREVO_API_KEY=$$PRODUCTION_MAIL_BREVO_API_KEY,GCS_BUCKET_NAME=$$PRODUCTION_GCS_BUCKET_NAME"
 
       gcloud compute instance-groups managed rolling-action start-update ${_MIG_NAME} \
