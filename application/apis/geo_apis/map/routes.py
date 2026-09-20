@@ -257,14 +257,15 @@ def geo_get_map_location_search():
 
         filter_text = data.get('filter')
 
-        query = '''
+        # bound parameter: the filter is user text and used to be interpolated into the SQL
+        query = db.text('''
         select loc_id, loc_name, info_text
         from public."mvwLocation"
-        where lower(loc_name) ~~ lower('%{}%')
+        where lower(loc_name) ~~ lower(:pattern)
         limit 10
-        '''.format(filter_text)
+        ''').bindparams(pattern=f"%{filter_text or ''}%")
 
-        dt = GeoUtils.get_db(db.text(query))
+        dt = GeoUtils.get_db(query)
 
         items = []
         for row in dt:
@@ -293,12 +294,12 @@ def geo_search_map_location_search():
 
         location_name = data.get('location_value')
 
-        query = '''
-        select loc_geom 
-        from public."v3_get_location"('{}')
-        '''.format(location_name)
+        query = db.text('''
+        select loc_geom
+        from public."v3_get_location"(:location_id)
+        ''').bindparams(location_id=str(location_name or ''))
 
-        dt = GeoUtils.get_db(db.text(query))
+        dt = GeoUtils.get_db(query)
 
         results = { }
         for row in dt:
