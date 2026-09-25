@@ -25,6 +25,7 @@ class UserLogic():
             refresh_token=refresh_token,
             token_type="bearer",
             expires_in=token_expire_time,
+            assistance_eligible=bool(known_user.assistance_eligible),
         )
         response.status_code = status_code # HTTPStatus.OK
         response.headers["Cache-Control"] = "no-store"

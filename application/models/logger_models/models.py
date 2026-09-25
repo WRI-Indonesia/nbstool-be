@@ -56,3 +56,37 @@ class Logs(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
         }
+
+class ProblemReport(db.Model):
+    '''one row per POST /loggers/report-problem; the screenshot itself lives in GCS'''
+    __tablename__ = 'tbl_logger_problem_reports'
+    id = db.Column(db.Integer, primary_key=True)
+
+    session_id = db.Column(db.String(100), index=True, nullable=True)
+    user_id = db.Column(db.Integer, index=True, nullable=True)      # NULL for anonymous
+    reporter = db.Column(db.String(255), nullable=True)             # email or 'anonymous'
+
+    description = db.Column(db.String(4000), nullable=True)
+    page_url = db.Column(db.String(2048), nullable=True)
+    locale = db.Column(db.String(16), nullable=True)
+    user_agent = db.Column(db.String(1024), nullable=True)
+    env = db.Column(db.String(128), nullable=True)                  # '<ENV> @ <host>'
+
+    screenshot_path = db.Column(db.String(255), nullable=True)      # GCS object path, NULL when none sent
+
+    created_at = db.Column(db.DateTime, default=get_date)
+
+    def to_json(self):
+        return {
+            'id': self.id,
+            'session_id': self.session_id,
+            'user_id': self.user_id,
+            'reporter': self.reporter,
+            'description': self.description,
+            'page_url': self.page_url,
+            'locale': self.locale,
+            'user_agent': self.user_agent,
+            'env': self.env,
+            'screenshot_path': self.screenshot_path,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }

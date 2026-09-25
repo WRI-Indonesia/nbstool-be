@@ -427,7 +427,8 @@ def user_account_verification_token(token:str):
                 )
         
         known_user.is_active = True
-        
+        known_user.size_limit = 500000
+
         db.session.add(known_user)
 
         # add for log
@@ -531,7 +532,9 @@ def user_account_forgot_password():
         known_user = User.query.filter_by(email=email).first()
         if not known_user:
             raise AppMessageException('email not found')
-        
+        if not known_user.is_active:
+            raise AppMessageException('user email has not been verified, please activate your account first')
+
         access_token, token_expire_time = known_user.encode_access_token()
 
         # prepare mail

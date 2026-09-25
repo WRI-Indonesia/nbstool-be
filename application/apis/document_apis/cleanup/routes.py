@@ -6,6 +6,9 @@ from .... import db
 from ....models.master_models.models import DocumentList
 from ....models.user_models.models import SessionsAuth, UserSessions
 
+# privacy levels whose data stays on the server past the session expiry
+PRIVACY_LEVELS_RETAINED = (2, 3)
+
 from datetime import datetime, timedelta
 from flask_cors import cross_origin
 from werkzeug.utils import secure_filename
@@ -55,20 +58,29 @@ def documents_cleanup_data():
 
         dt = GeoUtils.get_db(db.text(query), gis_db=False)
         total_records = 0
+        retained_records = 0
 
         for s in dt:
             session_id = s['session_id']
             session = SessionsAuth.find_by_session_id(session_id)
 
             if session:
+                project = UserSessions.find_by_session_id(session_id)
+
+                # Privacy level (see PROJECT_PRIVACY_LEVELS): level 1 = kept for the user's
+                # 1x24h only, so it expires like before; level 2 and 3 = stored on the server
+                # for the user's (and, at 3, partners') later use, so the expiry never touches
+                # it. Rows without a level (legacy) follow the as-is expiry path.
+                if project and project.privacy_level in PRIVACY_LEVELS_RETAINED:
+                    retained_records += 1
+                    continue
+
                 total_records += 1
 
                 # deactivate the session
                 session.is_active = 0
 
                 db.session.add(session)
-
-                project = UserSessions.find_by_session_id(session_id)
 
                 if project:
                     project.is_active = 0
@@ -149,7 +161,7 @@ def documents_cleanup_data():
         g_var.__log_it__ = False
         status_code = 200
         message = 'Expired data has succesfully clean'
-        return make_response(jsonify(success_handler({ 'result': {'total_records': total_records} }, status_code=status_code, message=message)), 200)
+        return make_response(jsonify(success_handler({ 'result': {'total_records': total_records, 'retained_records': retained_records} }, status_code=status_code, message=message)), 200)
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
     except Exception as e:

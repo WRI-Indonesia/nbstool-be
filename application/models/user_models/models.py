@@ -37,6 +37,8 @@ class User(UserMixin, db.Model):
     extended_data_json = db.Column(JSONB, nullable=True)
     avatar = db.Column(db.LargeBinary, nullable=True)
     size_limit = db.Column(db.Float, default=100000)
+    # may use the NbS Tool Assistance (chat agent) features; flipped by the team, not the user
+    assistance_eligible = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
     # public_id = db.Column(db.String(36), unique=True, default=lambda: str(uuid4()))
 
