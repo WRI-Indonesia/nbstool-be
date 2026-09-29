@@ -58,6 +58,10 @@ def projects_bind_project():
         session_id = data.get('session_id')
         user_id = current_user.id if current_user.is_authenticated else data.get('user_id')
         template_type = data.get('template_type')
+        privacy_level = data.get('privacy_level')
+        # optional; bool is an int subclass: `true` must not pass as 1
+        if privacy_level is not None and (isinstance(privacy_level, bool) or privacy_level not in PROJECT_PRIVACY_LEVELS):
+            raise AppMessageException('privacy_level must be one of {}'.format(list(PROJECT_PRIVACY_LEVELS)))
 
         message = 'Project is updated successfully'
         status_code = 200
@@ -94,6 +98,8 @@ def projects_bind_project():
         known_project.project_name = project_name
         if data.get('description') is not None:
             known_project.project_description = data.get('description')
+        if privacy_level is not None:
+            known_project.privacy_level = privacy_level
         known_project.is_project = 1
         db.session.add(known_project)
 
@@ -253,7 +259,8 @@ def projects_bind_project():
             'message': message,
             'project_id': session_id,
             'document_id': document_id,
-            'project_name': project_name
+            'project_name': project_name,
+            'privacy_level': known_project.privacy_level
         }
 
 

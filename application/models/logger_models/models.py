@@ -74,6 +74,13 @@ class ProblemReport(db.Model):
 
     screenshot_path = db.Column(db.String(255), nullable=True)      # GCS object path, NULL when none sent
 
+    # FE analytics ids, to find the report's Clarity recording / GA session
+    clarity_session_id = db.Column(db.String(255), nullable=True)
+    clarity_user_id = db.Column(db.String(255), nullable=True)
+    ga_client_id = db.Column(db.String(255), nullable=True)
+    ga_session_id = db.Column(db.String(255), nullable=True)
+    ga_user_id = db.Column(db.String(255), nullable=True)
+
     created_at = db.Column(db.DateTime, default=get_date)
 
     def to_json(self):
@@ -88,5 +95,10 @@ class ProblemReport(db.Model):
             'user_agent': self.user_agent,
             'env': self.env,
             'screenshot_path': self.screenshot_path,
+            'clarity_session_id': self.clarity_session_id,
+            'clarity_user_id': self.clarity_user_id,
+            'ga_client_id': self.ga_client_id,
+            'ga_session_id': self.ga_session_id,
+            'ga_user_id': self.ga_user_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

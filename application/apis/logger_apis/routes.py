@@ -28,6 +28,7 @@ import binascii
 recaptcha = CloudRecaptcha()
 
 MAX_REPORT_DESCRIPTION = 4000
+ANALYTICS_ID_FIELDS = ('clarity_session_id', 'clarity_user_id', 'ga_client_id', 'ga_session_id', 'ga_user_id')
 # the FE's automatic screenshot: a base64 (data URL or bare) PNG/JPEG/WebP, decoded size cap
 MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 SCREENSHOT_FOLDER = os.path.join('generated-file', 'report-problem')
@@ -217,6 +218,8 @@ def logger_report_problem():
         report.locale = str(data.get('locale'))[:16] if data.get('locale') else None
         report.user_agent = str(user_agent)[:1024] if user_agent else None
         report.env = env[:128]
+        for k in ANALYTICS_ID_FIELDS:
+            setattr(report, k, str(data.get(k))[:255] if data.get(k) else None)
 
         db.session.add(report)
         db.session.flush()
@@ -241,6 +244,11 @@ def logger_report_problem():
             ('Page', data.get('page_url')),
             ('Locale', data.get('locale')),
             ('User agent', user_agent),
+            ('Clarity session', report.clarity_session_id),
+            ('Clarity user', report.clarity_user_id),
+            ('GA client', report.ga_client_id),
+            ('GA session', report.ga_session_id),
+            ('GA user', report.ga_user_id),
             ('Time (UTC)', get_date().strftime('%Y-%m-%d %H:%M:%S')),
         ]
         lines = ['\U0001F41E <b>Problem report</b>']

@@ -1939,6 +1939,8 @@ paths:
                         type: string
                         examples:
                           - My NBS Project
+                      privacy_level:
+                        $ref: "#/components/schemas/PrivacyLevel"
           description: Success
         "201":
           description: Created
@@ -1987,6 +1989,10 @@ paths:
                   description: optional project description, stored on the project
                   examples:
                     - Community mangrove restoration in Kubu Raya
+                privacy_level:
+                  $ref: "#/components/schemas/PrivacyLevel"
+                  description: optional; kept unchanged when omitted (new
+                    projects start at 1)
                 template_type:
                   type: string
                   description: legacy v2 field, optional; any value other than
@@ -3254,6 +3260,36 @@ paths:
                   type: string
                   examples:
                     - Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
+                clarity_session_id:
+                  type: string
+                  maxLength: 255
+                  description: Microsoft Clarity session id
+                  examples:
+                    - "1q2w3e4"
+                clarity_user_id:
+                  type: string
+                  maxLength: 255
+                  description: Microsoft Clarity user id
+                  examples:
+                    - "abc123xyz"
+                ga_client_id:
+                  type: string
+                  maxLength: 255
+                  description: Google Analytics client id
+                  examples:
+                    - "1234567890.1727600000"
+                ga_session_id:
+                  type: string
+                  maxLength: 255
+                  description: Google Analytics session id
+                  examples:
+                    - "1727600000"
+                ga_user_id:
+                  type: string
+                  maxLength: 255
+                  description: Google Analytics user id
+                  examples:
+                    - "42"
                 screenshot:
                   type: string
                   contentEncoding: base64
