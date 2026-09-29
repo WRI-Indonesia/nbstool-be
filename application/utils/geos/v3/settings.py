@@ -25,9 +25,9 @@ import threading
 from sqlalchemy import create_engine, text
 
 try:
-    from .config import V3_BUCKET_SETTING
+    from .config import AOH_RASTER_ROOT, AOH_RASTER_ROOT_SETTING, V3_BUCKET_SETTING
 except ImportError:  # imported as a top-level module by a component run as a script
-    from config import V3_BUCKET_SETTING
+    from config import AOH_RASTER_ROOT, AOH_RASTER_ROOT_SETTING, V3_BUCKET_SETTING
 
 SETTINGS_TABLE = "tbl_master_settings"
 
@@ -89,8 +89,11 @@ def _get_engine():
         return _engine
 
 
-def get_setting(name: str) -> str:
+def get_setting(name: str, default: str | None = None) -> str:
     """One row of tbl_master_settings by name, cached for the life of the REQUEST.
+
+    `default` is for OPTIONAL rows only (an override of a config constant): a missing row then
+    returns it instead of raising. Required rows such as V3_BUCKET pass none.
 
     Not for the life of the process: `refresh()` drops the cache at the start of every request,
     so a repointed V3_BUCKET is picked up by the next request instead of needing a pm2 reload
@@ -130,6 +133,10 @@ def get_setting(name: str) -> str:
             row = conn.execute(
                 text(f"select value from {SETTINGS_TABLE} where name = :name"), {"name": name}
             ).first()
+
+        if (row is None or not row[0]) and default is not None:
+            _cache[name] = default
+            return default
 
         if row is None or not row[0]:
             raise RuntimeError(
@@ -175,7 +182,17 @@ def layer_path(layer: str) -> str:
     lives under the v3 root: the burned-area history reads v2's own objects under
     `assets-geo/baseline/`, which V3_BUCKET must not move. Config holds those as full urls, and
     this is what lets a component call `load_raster_clipped` on them like any other layer.
+
+    The AoH dataset is swappable on the fly: AOH_RASTER_ROOT, and every layer under it (the
+    species inventory included), is re-rooted onto the AOH_RASTER_ROOT row of tbl_master_settings
+    when one exists, so the component bodies keep calling `layer_path(AOH_RASTER_ROOT)` and
+    `layer_path(AOH_INVENTORY)` unchanged. The replacement dataset must keep the same layout:
+    `species_iucn_v3.geoparquet` at its root, `raster_path` relative to that root.
     """
+    if layer == AOH_RASTER_ROOT or layer.startswith(AOH_RASTER_ROOT + "/"):
+        root = get_setting(AOH_RASTER_ROOT_SETTING, default=AOH_RASTER_ROOT).rstrip("/")
+        layer = root + layer[len(AOH_RASTER_ROOT):]
+
     if layer.startswith("http") or layer.startswith("/vsi"):
         return layer
 

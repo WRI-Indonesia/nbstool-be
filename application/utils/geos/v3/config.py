@@ -614,6 +614,10 @@ CARBON_COVERAGE_WARN_PCT = 90.0    # 3.1/3.2 flag when the raster covers less of
 # 383 on the Indonesian test AOI). Only the survivors are counted.
 AOH_INVENTORY = "habitat_area/species_iucn_v3.geoparquet"
 AOH_RASTER_ROOT = "habitat_area"
+# tbl_master_settings row that overrides AOH_RASTER_ROOT -- and so AOH_INVENTORY, which sits under
+# it -- read by settings.layer_path on every request. Its value is a layer name under V3_BUCKET
+# (e.g. "habitat_area_v2") or a complete https / /vsi url. No row means AOH_RASTER_ROOT above.
+AOH_RASTER_ROOT_SETTING = "AOH_RASTER_ROOT"
 AOH_TARGET_DN = 1   # DN marking suitable habitat
 # Geodesic area, per the notebook: the rasters are EPSG:4326, where a pixel's ground area shrinks
 # with latitude, so habitat area is summed row by row from the ellipsoid rather than from a single
