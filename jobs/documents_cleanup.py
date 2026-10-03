@@ -2,8 +2,8 @@
 
 '''
 documents cleanup for retention policy
-running everyday at 0 AM
-checking delay per hour
+every 15 minutes: delete level 1 projects 24h after creation,
+and email their owners a deletion reminder 12h after creation
 '''
 
 __jobs_name__ = 'documents_cleanup'
@@ -79,33 +79,33 @@ def telegram_send_message(s):
 
     return response.json()
 
-post_now = True
+def call_job(label, path, count_keys):
+    message = ''
+    success = False
+    count = 0
+    try:
+        r = requests.get(BACKEND_API_URL + path + '?token={}'.format(JOBS_TOKEN))
+        print_log('{} requests ({}): {}'.format(label, r.status_code, r.text))
+        if r.status_code != 200:
+            message = 'failed ({}): {}'.format(r.status_code, r.text)
+        else:
+            result = r.json().get('result')
+            count = sum(result.get(k) or 0 for k in count_keys)
+            message = 'done: {}'.format(result)
+            success = True
+    except Exception as e:
+        print_log('{} requests error: {}'.format(label, str(e)))
+        message = 'error: {}'.format(str(e))
+
+    print_log('{} {}'.format(label, message))
+    # quiet runs stay off telegram: every 15 minutes would flood the chat
+    if not success or count:
+        telegram_send_message('{} {} {}'.format(chr(0x1F534) if not success else chr(9989), label, message))
+
+
 while True:
-    now = datetime.now(UTC)
-
-    if now.hour == 0 or post_now:
-        post_now = False
-
-        print_log('cleanup process start...')
-        telegram_send_message('{} document cleanup process start...'.format(chr(0x1F535)))
-
-        cleanup_message = ''
-        cleanup_success = False
-        try:
-            r = requests.get(BACKEND_API_URL + '/documents/cleanup?&token={}'.format(JOBS_TOKEN))
-            print_log('get requests success ({}): {}'.format(r.status_code, r.text))
-            if r.status_code != 200:
-                cleanup_message = 'failed ({}): {}'.format(r.status_code, r.text)
-            else:
-                cleanup_message = 'done: {} total records'.format(r.json().get('result').get('total_records'))
-                cleanup_success = True
-        except Exception as e:
-            print_log('get requests error: {}'.format(str(e)))
-            r = None
-            cleanup_message = 'error: {}'.format(str(e))
-        
-        print_log('cleanup process {}'.format(cleanup_message))
-        telegram_send_message('{} document cleanup process {}'.format(chr(0x1F534) if not cleanup_success else chr(9989), cleanup_message))
+    call_job('document cleanup', '/documents/cleanup', ('total_records',))
+    call_job('deletion reminder', '/documents/cleanup/reminder', ('sent_records', 'failed_records'))
 
     print_log('waiting...')
-    time.sleep(3600) # one hour
+    time.sleep(900) # 15 minutes

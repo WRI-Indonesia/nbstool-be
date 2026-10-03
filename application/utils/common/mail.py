@@ -1,18 +1,22 @@
 from flask import render_template, current_app
-import sib_api_v3_sdk
-from sib_api_v3_sdk.rest import ApiException
+# off: brevo, replaced by google workspace smtp
+# import sib_api_v3_sdk
+# from sib_api_v3_sdk.rest import ApiException
+from email.mime.text import MIMEText
+from email.utils import formataddr
+import smtplib
 import os
 
 from ...models.master_models.models import Settings
 
-configuration = sib_api_v3_sdk.Configuration()
-configuration.api_key['api-key'] = os.environ.get('MAIL_BREVO_API_KEY')
-
-api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+# configuration = sib_api_v3_sdk.Configuration()
+# configuration.api_key['api-key'] = os.environ.get('MAIL_BREVO_API_KEY')
+#
+# api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
 
 class BaseMail():
     def __init__(self, to, subject='No Reply', template='base.html', data={}):
-        self.sender = {"name":"SCeNe Coalition","email":"info@scenecoalition.com"}
+        self.sender = {"name": os.environ.get('MAIL_SMTP_FROM_NAME'), "email": os.environ.get('MAIL_SMTP_USER')}
         self.to = to
         self.subject = subject
         self.template = template
@@ -29,14 +33,8 @@ class BaseMail():
         }
         self.data.update(data)
     
-    def send_brevo_mail(self):
-        if ';' in self.to:
-            to = [{ 'email': n } for n in self.to.split(';')]
-        else:
-            to = [{ "email": self.to }]
-        
-        # params = {"parameter":"My param value","subject":"New Subject"}
-        # send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(to=to, bcc=bcc, cc=cc, reply_to=reply_to, headers=headers, html_content=html_content, sender=sender, subject=subject)
+    def send_mail(self):
+        to = self.to.split(';')
 
         # debug
         current_app.logger.info(to)
@@ -44,23 +42,33 @@ class BaseMail():
         current_app.logger.info(self.data)
         current_app.logger.info('---------------------------')
         current_app.logger.info(render_template(self.template, data=self.data))
-        # return True
         # end debug
-        
-        try:
-            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
-                to=to, 
-                html_content=render_template(self.template, data=self.data), 
-                sender=self.sender, 
-                subject=self.subject
-            )
 
-            api_response = api_instance.send_transac_email(send_smtp_email)
-            current_app.logger.info(api_response)
+        message = MIMEText(render_template(self.template, data=self.data), 'html', 'utf-8')
+        message['Subject'] = self.subject
+        message['From'] = formataddr((self.sender['name'], self.sender['email']))
+        message['To'] = ', '.join(to)
+
+        host = os.environ.get('MAIL_SMTP_HOST')
+        port = int(os.environ.get('MAIL_SMTP_PORT') or 587)
+
+        try:
+            # 465 = implicit TLS, anything else (587) = STARTTLS
+            if port == 465:
+                server = smtplib.SMTP_SSL(host, port, timeout=30)
+            else:
+                server = smtplib.SMTP(host, port, timeout=30)
+                server.starttls()
+            with server:
+                server.login(os.environ.get('MAIL_SMTP_USER'), os.environ.get('MAIL_SMTP_PASSWORD'))
+                server.sendmail(self.sender['email'], to, message.as_string())
             return True
-        except ApiException as e:
-            current_app.logger.info("Exception when calling SMTPApi->send_transac_email: %s\n" % e)
+        except Exception as e:
+            current_app.logger.info("Exception when sending smtp mail: %s" % e)
             return False
+
+    # callers still use the brevo-era name
+    send_brevo_mail = send_mail
 
 
 # enums
@@ -92,3 +100,8 @@ class EMailIncubatorsReviewToUser():
 class EMailReviewUserRequest():
     SUBJECT = '[NbS Tool] Request for Broader Area ANalysis'
     TEMPLATE = 'user_area_request.html'
+
+
+class EMailProjectDeletionReminder():
+    SUBJECT = '[Action needed] "{}" will be deleted' # .format(project_name)
+    TEMPLATE = 'project_deletion_reminder.html'

@@ -582,6 +582,8 @@ def build_context(analyzer, form: dict | None, user_input: dict | None,
 
     return {
         "t": t,
+        # Every filled tag -> value, for flat exports (GET /documents/csv).
+        "tags": lookup,
         "land_cover_rest": land_cover_rest,
         "species_rows": species_rows,
         "keystone_present": bool(nature.get("key_species")),

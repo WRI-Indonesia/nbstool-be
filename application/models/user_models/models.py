@@ -202,6 +202,9 @@ class UserSessions(db.Model):
     # endpoint persisted, NULL for legacy rows and sessions with no calculation yet
     analyzer_version = db.Column(db.String(10), nullable=True)
 
+    # when the 12h "your level 1 project will be deleted" email went out; NULL = not sent
+    deletion_reminder_sent_at = db.Column(db.DateTime, nullable=True)
+
     updated_at = db.Column(db.DateTime, onupdate=get_date)
     updated_by = db.Column(db.Integer, default=0)
 

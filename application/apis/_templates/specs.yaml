@@ -2265,8 +2265,34 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters:
         - $ref: "#/components/parameters/session_id"
-      description: export project data as a CSV file (inline view)
+      description: export project data as a CSV file with columns category, indicator,
+        value -- one row per indicator the project's analysis and feasibility form have
+        filled (category is printed on its first row only). Indicators without a value are
+        omitted.
       operationId: getCsv
+
+  /documents/kml:
+    get:
+      tags:
+        - Document module
+      summary: get aoi kml
+      responses:
+        "200":
+          content:
+            application/vnd.google-earth.kml+xml:
+              schema:
+                type: string
+                format: binary
+          description: KML file download (aoi.kml) with the project's AOI polygon as
+            one placemark named after the project
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      description: export the project's area of interest as a KML file
+      operationId: getKml
 
   /documents/geopdf:
     get:
@@ -3014,6 +3040,56 @@ paths:
           allowReserved: false
       description: clean up expired sessions, temporary files, and associated documents
       operationId: cleanup
+
+  /documents/cleanup/reminder:
+    get:
+      tags:
+        - Document module
+      summary: cleanup reminder
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                title: CleanupReminderOk
+                required:
+                  - result
+                properties:
+                  result:
+                    type: object
+                    required:
+                      - sent_records
+                      - failed_records
+                    properties:
+                      sent_records:
+                        type: integer
+                        description: projects whose owner was emailed a deletion reminder
+                        examples:
+                          - 4
+                      failed_records:
+                        type: integer
+                        description: reminders that could not be sent; retried on the next call
+                        examples:
+                          - 0
+          description: Success
+        "400":
+          $ref: "#/components/responses/Bad Request"
+        "500":
+          $ref: "#/components/responses/Internal Server Error"
+      parameters:
+        - in: query
+          name: token
+          style: form
+          schema:
+            type: string
+          explode: true
+          required: true
+          description: access control token
+          allowReserved: false
+      description: email the owners of privacy level 1 projects, once, 12 hours after the
+        project was created, that it will be deleted 24 hours after creation
+      operationId: cleanupReminder
 
   /masters/organization/list:
     get:

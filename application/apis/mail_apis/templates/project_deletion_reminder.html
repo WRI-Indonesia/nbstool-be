@@ -1,0 +1,17 @@
+<html>
+    <body>
+        <p>Hi {{ data.user_email }},</p>
+        <p>This is a reminder that your NbS Tool project "{{ data.project_name }}" is currently set to <b>Level 1 &middot; Temporary</b> privacy.</p>
+        <p>Under Level 1, project data is only temporarily available in NbS Tool and will be automatically deleted 24 hours after the project is created.</p>
+        <p>Your project "{{ data.project_name }}" is scheduled for deletion at <b>{{ data.deletion_date_time }}</b>.</p>
+        <p>To keep this project and its analysis results, please change its privacy level to <b>Level 2 &middot; Private</b> or <b>Level 3 &middot; Limited Shared</b> before the deletion deadline.</p>
+        <p><a href="{{ data.fe_url.rstrip('/') }}/my-project/{{ data.session_id }}">Keep "{{ data.project_name }}"</a></p>
+        <p>Or copy and paste the link below into your browser:</p>
+        <p>{{ data.fe_url.rstrip('/') }}/my-project/{{ data.session_id }}</p>
+        <p>If you would like to keep the project at Level 1 &middot; Temporary, no action is required. The project and its associated data will be automatically deleted once the 24-hour retention period ends and will no longer be available in NbS Tool.</p>
+        <p>If you have any questions or need assistance, please contact our support team at <a href="mailto:nbstool@scenecoalition.org">nbstool@scenecoalition.org</a>.</p>
+        <p>Thank you for using NbS Tool!</p>
+        <p>Sincerely,</p>
+        <p>NbS Tool Team</p>
+    </body>
+</html>

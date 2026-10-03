@@ -28,7 +28,85 @@ from ....utils.geos import GeoUtils
 
 from ....utils.logger import log_func
 
+from ....utils.common.mail import BaseMail, EMailProjectDeletionReminder
+
 from .. import gcs
+
+
+def _check_jobs_token():
+    # shared with jobs/documents_cleanup.py; unset on the server = every call refused
+    token = os.environ.get('JOBS_TOKEN')
+    if not token or request.args.get('token') != token:
+        raise AppMessageException('you dont have permission to do this!')
+
+
+@document_apis_blueprint.route('/cleanup/reminder', methods=['GET'])
+@cross_origin()
+def documents_cleanup_reminder():
+    g_var.__api_name__ = 'documents_cleanup_reminder'
+
+    g_var.__log_it__ = False
+    g_var.__session_id__ = None
+
+    try:
+        _check_jobs_token()
+
+        # Level 1 (or unset) projects of standard users, 12h+ old, not yet past the 24h
+        # deletion and not yet reminded -- the same population vwExpiredSession deletes.
+        query = '''
+        select
+            us.id,
+            us.session_id,
+            us.project_name,
+            u.email,
+            s.created_at + interval '24 hours' as deletion_at
+        from tbl_user_sessions us
+        join tbl_sessions s on s.session_id = us.session_id
+        join tbl_users u on u.id = us.user_id
+        where us.is_active = 1
+            and s.is_active = 1
+            and us.is_project
+            and u.permission_policy = 1
+            and coalesce(us.privacy_level, 1) = 1
+            and us.deletion_reminder_sent_at is null
+            and s.created_at <= current_timestamp - interval '12 hours'
+            and s.created_at > current_timestamp - interval '24 hours'
+        '''
+
+        sent = failed = 0
+        for row in db.session.execute(db.text(query)).mappings().all():
+            project_name = row['project_name'] or 'Untitled project'
+            mail_ = BaseMail(
+                to=row['email'],
+                subject=EMailProjectDeletionReminder.SUBJECT.format(project_name),
+                template=EMailProjectDeletionReminder.TEMPLATE,
+                data={
+                    'user_email': row['email'],
+                    'project_name': project_name,
+                    'session_id': row['session_id'],
+                    'deletion_date_time': row['deletion_at'].strftime('%d %B %Y, %H:%M UTC'),
+                }
+            )
+            if not mail_.send_mail():
+                failed += 1
+                continue
+
+            # stamped per mail so a crash mid-loop never re-sends; updated_at kept as-is
+            # (the reminder is not a user edit of the project)
+            UserSessions.query.filter_by(id=row['id']).update({
+                'deletion_reminder_sent_at': get_date(),
+                'updated_at': UserSessions.updated_at,
+            })
+            db.session.commit()
+            sent += 1
+
+        status_code = 200
+        message = 'Deletion reminders sent'
+        return make_response(jsonify(success_handler({ 'result': {'sent_records': sent, 'failed_records': failed} }, status_code=status_code, message=message)), 200)
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
 # legacy: /nbsapi/project-management/data-cleanup [POST]
@@ -45,10 +123,7 @@ def documents_cleanup_data():
         pass
 
     try:
-        request_token = request.args.get('token')
-        token = 'lets_try_this_token'
-        if request_token != token:
-            raise AppMessageException('you dont have permission to do this!')
+        _check_jobs_token()
 
         query = '''
         select 

@@ -28,6 +28,12 @@ class Config:
 
     # FE_URL = os.environ.get('FE_URL')
     MAIL_BREVO_API_KEY = os.environ.get('MAIL_BREVO_API_KEY')
+    MAIL_SMTP_HOST = os.environ.get('MAIL_SMTP_HOST')
+    MAIL_SMTP_PORT = os.environ.get('MAIL_SMTP_PORT')
+    MAIL_SMTP_USER = os.environ.get('MAIL_SMTP_USER')
+    MAIL_SMTP_PASSWORD = os.environ.get('MAIL_SMTP_PASSWORD')
+    MAIL_SMTP_FROM_NAME = os.environ.get('MAIL_SMTP_FROM_NAME')
+    JOBS_TOKEN = os.environ.get('JOBS_TOKEN')
     # TOKEN_EXPIRE_HOURS = int(os.environ.get('TOKEN_EXPIRE_HOURS'))
     # TOKEN_EXPIRE_MINUTES = int(os.environ.get('TOKEN_EXPIRE_MINUTES'))
 

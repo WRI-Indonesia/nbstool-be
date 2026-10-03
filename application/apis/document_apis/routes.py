@@ -14,6 +14,7 @@ from flask_cors import cross_origin
 from werkzeug.utils import secure_filename
 from pathlib import Path
 from io import StringIO, BytesIO
+from xml.sax.saxutils import escape
 from osgeo import ogr, osr
 
 import os
@@ -26,6 +27,8 @@ import csv
 from ...utils.common import AppMessageException, get_date, set_attr, get_default_list_param
 from ...utils.common import app_exception_handler, success_handler
 from ...utils.geopdf import generate_geopdf
+from ...utils.document_generator.v3.context import build_context
+from .utils import load_draft, generate_extra_tags
 
 from . import gcs
 
@@ -151,149 +154,30 @@ def documents_get_document_csv():
         
         g_var.__session_id__ = user_sessions.session_id
 
-        data_analyzer = DataAnalyzer.find_by_session_id(session_id)
-        if not data_analyzer:
+        # v3: one row per filled feasibility-template tag ("Category: indicator" -> value), from
+        # the same context the docx generator renders -- analyzer results, saved F03 form,
+        # user inputs and project metadata. Unfilled tags are left out.
+        analyzer, form, user_input = load_draft(session_id, 'FeasibilityV3')
+        if not analyzer:
             raise AppMessageException('data not found [da]')
 
-        map_explorer = MapExplorer.find_by_session_id(session_id)
-        if not map_explorer:
-            raise AppMessageException('data not found [me]')
-        
-        # d = {
-        #     'site_information': eval('data_analyzer.site_information'),
-        #     'nature': eval('data_analyzer.nature'),
-        #     'climate': eval('data_analyzer.climate'),
-        #     'people': eval('data_analyzer.people'),
-        #     'intervention_eligibility': eval('data_analyzer.intervention_eligibility'),
-        # }
-        # open('/home/del/Downloads/current_condition_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(d))
-        # open('/home/del/Downloads/benefit_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(data_analyzer.benefit))
-        # open('/home/del/Downloads/map_explorer_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(map_explorer.to_json()))
-        # raise Exception(str(d))
-        
-        mapping_data = {
-            'General': {
-                'General': [
-                    {'name': 'Project Name', 'source': 'user_sessions.project_name', },
-                    {'name': 'Area Size', 'source': 'data_analyzer.site_information..administrative_boundaries..project_area'},
-                    {'name': 'Project Duration', 'source': 'map_explorer.project_duration'},
-                    {'name': 'Intervention Type', 'source': 'map_explorer.intervention'}, # convert list to string
-                ]
-            },
-            'Current Condition': {
-                'Site Information': [
-                    {'name': 'Country', 'source': 'data_analyzer.site_information..administrative_boundaries..country'},
-                    {'name': 'Province', 'source': 'data_analyzer.site_information..administrative_boundaries..province'},
-                    {'name': 'District', 'source': 'data_analyzer.site_information..administrative_boundaries..district'},
-                    {'name': 'Forest Coverage (%)', 'source': 'data_analyzer.site_information..administrative_boundaries..forest_pct'},
-                    {'name': 'Protected Area (%)', 'source': 'data_analyzer.site_information..administrative_boundaries..protect_pct'},
-                    {'name': 'Area Topography', 'source': 'data_analyzer.site_information..elevation..elevation_class'},
-                    {'name': 'Land Covers', 'source': 'data_analyzer.site_information..land_cover'}, # convert list to string
-                    {'name': 'Peatland', 'source': 'data_analyzer.site_information..peatland_mangrove..peatland'},
-                    {'name': 'Mangrove', 'source': 'data_analyzer.site_information..peatland_mangrove..mangrove'},
-                    {'name': 'Driver of Deforestation', 'source': 'data_analyzer.site_information..driver_of_deforestation..driver_text'},
-                    {'name': 'Annual Deforestation (%)', 'source': 'data_analyzer.site_information..annual_deforestation_rate..pct', 'end': '%'},
-                    {'name': 'Deforestation Risk Level', 'source': 'data_analyzer.site_information..deforestation_risk..risk_type'},
-                    {'name': 'Floods Risk', 'source': 'data_analyzer.site_information..disaster_risk..floods'},
-                    {'name': 'Landslide Risk', 'source': 'data_analyzer.site_information..disaster_risk..landslides'},
-                    {'name': 'Drought Risk', 'source': 'data_analyzer.site_information..disaster_risk..drought'},
-                    {'name': 'Cyclonic Risk', 'source': 'data_analyzer.site_information..disaster_risk..cyclone'},
-                ],
-                'Nature': [
-                    {'name': 'Overlapped KBA', 'source': 'data_analyzer.nature..kba..kba_name'},
-                    {'name': 'Overlapped KBA Area', 'source': 'data_analyzer.nature..kba..area_ha'},
-                    {'name': 'FLII', 'source': 'data_analyzer.nature..flii..index'},
-                    {'name': 'FLII Level', 'source': 'data_analyzer.nature..flii..integrity'},
-                    {'name': 'FLII Level Meaning', 'source': 'data_analyzer.nature..flii..meaning'},
-                    {'name': 'Total Amphibi', 'source': 'data_analyzer.nature..wildlife..amphibi'},
-                    {'name': 'Total Bird', 'source': 'data_analyzer.nature..wildlife..bird'},
-                    {'name': 'Total Mammal', 'source': 'data_analyzer.nature..wildlife..mammal'},
-                    {'name': 'Total Reptile', 'source': 'data_analyzer.nature..wildlife..reptile'},
-                    {'name': 'Endangered Trees', 'source': 'data_analyzer.nature..richness..endangered'},
-                    {'name': 'Tiger Conservation Landscape ', 'source': 'data_analyzer.nature..tcl..text'},
-                ],
-                'Climate': [
-                    {'name': 'Minimum Annual Temperature', 'source': 'data_analyzer.climate..temperature..min'},
-                    {'name': 'Maximum Annual Temperature', 'source': 'data_analyzer.climate..temperature..max'},
-                    {'name': 'Average Annual Temperature', 'source': 'data_analyzer.climate..temperature..mean'},
-                    {'name': 'Minimum Precipitation', 'source': 'data_analyzer.climate..precipitation..min'},
-                    {'name': 'Maximum Precipitation', 'source': 'data_analyzer.climate..precipitation..max'},
-                    {'name': 'Average Precipitation', 'source': 'data_analyzer.climate..precipitation..mean'},
-                    {'name': 'Current Carbon Storage Total ', 'source': 'data_analyzer.climate..carbon_storage..carbon_storage_plain'},
-                    {'name': 'Current Carbon Storage Total (Walker)', 'source': 'data_analyzer.climate..carbon_storage..other_source_plain'},
-                    {'name': 'Above Ground Biomass', 'source': 'data_analyzer.climate..carbon_storage..aboveground_percent', 'end': '%'},
-                    {'name': 'Soil Organic Carbon', 'source': 'data_analyzer.climate..carbon_storage..soil_percent', 'end': '%'},
-                    {'name': 'Below Ground Biomass', 'source': 'data_analyzer.climate..carbon_storage..belowground_percent', 'end': '%'},
-                    {'name': 'Burned Area (10 years)', 'source': 'data_analyzer.climate..burned_area..burn_area'},
-                    {'name': 'Average Burned Area Occurrence (10 years)', 'source': 'data_analyzer.climate..burned_area..burn_frequency', 'end': '%'},
-                ]
-            },
-            'Benefit': {
-                'Site Information': [
-                    {'name': 'Allocated for Avoided Deforestation (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..eligible_avdef_ha'},
-                    {'name': 'Allocated for Ecosystem Restoration (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..eligible_ecosystem_restoration_ha'},
-                    {'name': 'Non-eligible (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..non_eligible_project_area_ha'},
-                ],
-                'Nature': [
-                    {'name': 'Habitat will be restored under Ecosystem Restoration intervention (ha)', 'source': 'data_analyzer.benefit..nature..area_of_habitat..ecosystem_restoration'},
-                    {'name': 'Habitat will be conserved under Avoided Deforestation intervention (ha)', 'source': 'data_analyzer.benefit..nature..area_of_habitat..avoided_deforestation'},
-                ],
-                'Climate': [
-                    {'name': 'Potential Avoided Carbon Emission (tonnes)', 'source': 'data_analyzer.benefit..climate..potential_avoided'},
-                    {'name': 'CO2eq pottentially sequestered (tonnes)', 'source': 'data_analyzer.benefit..climate..potential_sequestered..total_co2eq'},
-                ],
-                'People': [
-                    {'name': 'Reduce potential erosion', 'source': 'data_analyzer.benefit..people..ecosystem_services..reduce_erosion', 'end': '%'},
-                    {'name': 'Improving water yield', 'source': 'data_analyzer.benefit..people..ecosystem_services..improve_water_yield', 'end': '%'},
-                ]
-            },
-        }
+        tags = build_context(analyzer, form, user_input, generate_extra_tags(session_id))['tags']
 
-        csvheader = ['category', 'section', 'indicator', 'value']
-        ddot_to_dict = lambda s: ''.join([n if i == 0 else "['{}']".format(n) for i, n in enumerate(s.split('..'))])
         csvrow = []
+        last_category = None
+        for tag, value in tags.items():
+            category, _, indicator = tag.partition(': ')
+            if not indicator:
+                category, indicator = 'General', tag
+            csvrow.append({
+                'category': category if category != last_category else '',
+                'indicator': indicator,
+                'value': value,
+            })
+            last_category = category
 
-        for category_name in mapping_data.keys():
-            category = mapping_data[category_name]
-            category_first_index = True
-
-            for section_name in category.keys():
-                section = category[section_name]
-                section_first_index = True
-
-                for indicator in section:
-
-                    d = {
-                        'category': '',
-                        'section': '',
-                        'indicator': indicator['name'],
-                    }
-
-                    if category_first_index:
-                        category_first_index = False
-                        d['category'] = category_name
-                    
-                    if section_first_index:
-                        section_first_index = False
-                        d['section'] = section_name
-                    
-                    d['value'] = eval(ddot_to_dict(indicator['source']))
-
-                    # custom value
-                    if indicator['source'] == 'data_analyzer.site_information..land_cover':
-                        d['value'] = '; '.join(['{} ({} ha, {}%)'.format(n['lc_class'], n['area_ha'], n['area_pct']) for n in d['value']])
-                    
-                    if indicator['source'] == 'map_explorer.intervention':
-                        d['value'] = '; '.join(d['value'])
-                    # end custom value
-
-                    if indicator.get('end'):
-                        d['value'] = '{}{}'.format(d['value'], indicator['end'])
-
-                    csvrow.append(d)
-        
         strbuf = StringIO()
-        dict_writer = csv.DictWriter(strbuf, csvheader)
+        dict_writer = csv.DictWriter(strbuf, ['category', 'indicator', 'value'])
         dict_writer.writeheader()
         dict_writer.writerows(csvrow)
 
@@ -301,10 +185,209 @@ def documents_get_document_csv():
         buf.seek(0)
 
         return send_file(
-            buf, 
+            buf,
             as_attachment=True,
             download_name='project_data.csv',
             mimetype='text/csv'
+        )
+
+        # off: v2 csv (pickle DataAnalyzer + MapExplorer), replaced by the v3 context above
+        # data_analyzer = DataAnalyzer.find_by_session_id(session_id)
+        # if not data_analyzer:
+        #     raise AppMessageException('data not found [da]')
+
+        # map_explorer = MapExplorer.find_by_session_id(session_id)
+        # if not map_explorer:
+        #     raise AppMessageException('data not found [me]')
+
+        # # d = {
+        # #     'site_information': eval('data_analyzer.site_information'),
+        # #     'nature': eval('data_analyzer.nature'),
+        # #     'climate': eval('data_analyzer.climate'),
+        # #     'people': eval('data_analyzer.people'),
+        # #     'intervention_eligibility': eval('data_analyzer.intervention_eligibility'),
+        # # }
+        # # open('/home/del/Downloads/current_condition_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(d))
+        # # open('/home/del/Downloads/benefit_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(data_analyzer.benefit))
+        # # open('/home/del/Downloads/map_explorer_8959597c-255e-4af1-bd4e-ac3eda8c8e2f.txt', 'w').write(str(map_explorer.to_json()))
+        # # raise Exception(str(d))
+        
+        # mapping_data = {
+        #     'General': {
+        #         'General': [
+        #             {'name': 'Project Name', 'source': 'user_sessions.project_name', },
+        #             {'name': 'Area Size', 'source': 'data_analyzer.site_information..administrative_boundaries..project_area'},
+        #             {'name': 'Project Duration', 'source': 'map_explorer.project_duration'},
+        #             {'name': 'Intervention Type', 'source': 'map_explorer.intervention'}, # convert list to string
+        #         ]
+        #     },
+        #     'Current Condition': {
+        #         'Site Information': [
+        #             {'name': 'Country', 'source': 'data_analyzer.site_information..administrative_boundaries..country'},
+        #             {'name': 'Province', 'source': 'data_analyzer.site_information..administrative_boundaries..province'},
+        #             {'name': 'District', 'source': 'data_analyzer.site_information..administrative_boundaries..district'},
+        #             {'name': 'Forest Coverage (%)', 'source': 'data_analyzer.site_information..administrative_boundaries..forest_pct'},
+        #             {'name': 'Protected Area (%)', 'source': 'data_analyzer.site_information..administrative_boundaries..protect_pct'},
+        #             {'name': 'Area Topography', 'source': 'data_analyzer.site_information..elevation..elevation_class'},
+        #             {'name': 'Land Covers', 'source': 'data_analyzer.site_information..land_cover'}, # convert list to string
+        #             {'name': 'Peatland', 'source': 'data_analyzer.site_information..peatland_mangrove..peatland'},
+        #             {'name': 'Mangrove', 'source': 'data_analyzer.site_information..peatland_mangrove..mangrove'},
+        #             {'name': 'Driver of Deforestation', 'source': 'data_analyzer.site_information..driver_of_deforestation..driver_text'},
+        #             {'name': 'Annual Deforestation (%)', 'source': 'data_analyzer.site_information..annual_deforestation_rate..pct', 'end': '%'},
+        #             {'name': 'Deforestation Risk Level', 'source': 'data_analyzer.site_information..deforestation_risk..risk_type'},
+        #             {'name': 'Floods Risk', 'source': 'data_analyzer.site_information..disaster_risk..floods'},
+        #             {'name': 'Landslide Risk', 'source': 'data_analyzer.site_information..disaster_risk..landslides'},
+        #             {'name': 'Drought Risk', 'source': 'data_analyzer.site_information..disaster_risk..drought'},
+        #             {'name': 'Cyclonic Risk', 'source': 'data_analyzer.site_information..disaster_risk..cyclone'},
+        #         ],
+        #         'Nature': [
+        #             {'name': 'Overlapped KBA', 'source': 'data_analyzer.nature..kba..kba_name'},
+        #             {'name': 'Overlapped KBA Area', 'source': 'data_analyzer.nature..kba..area_ha'},
+        #             {'name': 'FLII', 'source': 'data_analyzer.nature..flii..index'},
+        #             {'name': 'FLII Level', 'source': 'data_analyzer.nature..flii..integrity'},
+        #             {'name': 'FLII Level Meaning', 'source': 'data_analyzer.nature..flii..meaning'},
+        #             {'name': 'Total Amphibi', 'source': 'data_analyzer.nature..wildlife..amphibi'},
+        #             {'name': 'Total Bird', 'source': 'data_analyzer.nature..wildlife..bird'},
+        #             {'name': 'Total Mammal', 'source': 'data_analyzer.nature..wildlife..mammal'},
+        #             {'name': 'Total Reptile', 'source': 'data_analyzer.nature..wildlife..reptile'},
+        #             {'name': 'Endangered Trees', 'source': 'data_analyzer.nature..richness..endangered'},
+        #             {'name': 'Tiger Conservation Landscape ', 'source': 'data_analyzer.nature..tcl..text'},
+        #         ],
+        #         'Climate': [
+        #             {'name': 'Minimum Annual Temperature', 'source': 'data_analyzer.climate..temperature..min'},
+        #             {'name': 'Maximum Annual Temperature', 'source': 'data_analyzer.climate..temperature..max'},
+        #             {'name': 'Average Annual Temperature', 'source': 'data_analyzer.climate..temperature..mean'},
+        #             {'name': 'Minimum Precipitation', 'source': 'data_analyzer.climate..precipitation..min'},
+        #             {'name': 'Maximum Precipitation', 'source': 'data_analyzer.climate..precipitation..max'},
+        #             {'name': 'Average Precipitation', 'source': 'data_analyzer.climate..precipitation..mean'},
+        #             {'name': 'Current Carbon Storage Total ', 'source': 'data_analyzer.climate..carbon_storage..carbon_storage_plain'},
+        #             {'name': 'Current Carbon Storage Total (Walker)', 'source': 'data_analyzer.climate..carbon_storage..other_source_plain'},
+        #             {'name': 'Above Ground Biomass', 'source': 'data_analyzer.climate..carbon_storage..aboveground_percent', 'end': '%'},
+        #             {'name': 'Soil Organic Carbon', 'source': 'data_analyzer.climate..carbon_storage..soil_percent', 'end': '%'},
+        #             {'name': 'Below Ground Biomass', 'source': 'data_analyzer.climate..carbon_storage..belowground_percent', 'end': '%'},
+        #             {'name': 'Burned Area (10 years)', 'source': 'data_analyzer.climate..burned_area..burn_area'},
+        #             {'name': 'Average Burned Area Occurrence (10 years)', 'source': 'data_analyzer.climate..burned_area..burn_frequency', 'end': '%'},
+        #         ]
+        #     },
+        #     'Benefit': {
+        #         'Site Information': [
+        #             {'name': 'Allocated for Avoided Deforestation (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..eligible_avdef_ha'},
+        #             {'name': 'Allocated for Ecosystem Restoration (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..eligible_ecosystem_restoration_ha'},
+        #             {'name': 'Non-eligible (ha)', 'source': 'data_analyzer.benefit..site_information..land_features..non_eligible_project_area_ha'},
+        #         ],
+        #         'Nature': [
+        #             {'name': 'Habitat will be restored under Ecosystem Restoration intervention (ha)', 'source': 'data_analyzer.benefit..nature..area_of_habitat..ecosystem_restoration'},
+        #             {'name': 'Habitat will be conserved under Avoided Deforestation intervention (ha)', 'source': 'data_analyzer.benefit..nature..area_of_habitat..avoided_deforestation'},
+        #         ],
+        #         'Climate': [
+        #             {'name': 'Potential Avoided Carbon Emission (tonnes)', 'source': 'data_analyzer.benefit..climate..potential_avoided'},
+        #             {'name': 'CO2eq pottentially sequestered (tonnes)', 'source': 'data_analyzer.benefit..climate..potential_sequestered..total_co2eq'},
+        #         ],
+        #         'People': [
+        #             {'name': 'Reduce potential erosion', 'source': 'data_analyzer.benefit..people..ecosystem_services..reduce_erosion', 'end': '%'},
+        #             {'name': 'Improving water yield', 'source': 'data_analyzer.benefit..people..ecosystem_services..improve_water_yield', 'end': '%'},
+        #         ]
+        #     },
+        # }
+
+        # csvheader = ['category', 'section', 'indicator', 'value']
+        # ddot_to_dict = lambda s: ''.join([n if i == 0 else "['{}']".format(n) for i, n in enumerate(s.split('..'))])
+        # csvrow = []
+
+        # for category_name in mapping_data.keys():
+        #     category = mapping_data[category_name]
+        #     category_first_index = True
+
+        #     for section_name in category.keys():
+        #         section = category[section_name]
+        #         section_first_index = True
+
+        #         for indicator in section:
+
+        #             d = {
+        #                 'category': '',
+        #                 'section': '',
+        #                 'indicator': indicator['name'],
+        #             }
+
+        #             if category_first_index:
+        #                 category_first_index = False
+        #                 d['category'] = category_name
+                    
+        #             if section_first_index:
+        #                 section_first_index = False
+        #                 d['section'] = section_name
+                    
+        #             d['value'] = eval(ddot_to_dict(indicator['source']))
+
+        #             # custom value
+        #             if indicator['source'] == 'data_analyzer.site_information..land_cover':
+        #                 d['value'] = '; '.join(['{} ({} ha, {}%)'.format(n['lc_class'], n['area_ha'], n['area_pct']) for n in d['value']])
+                    
+        #             if indicator['source'] == 'map_explorer.intervention':
+        #                 d['value'] = '; '.join(d['value'])
+        #             # end custom value
+
+        #             if indicator.get('end'):
+        #                 d['value'] = '{}{}'.format(d['value'], indicator['end'])
+
+        #             csvrow.append(d)
+        
+        # strbuf = StringIO()
+        # dict_writer = csv.DictWriter(strbuf, csvheader)
+        # dict_writer.writeheader()
+        # dict_writer.writerows(csvrow)
+
+        # buf = BytesIO(strbuf.getvalue().encode('utf-8'))
+        # buf.seek(0)
+
+        # return send_file(
+        #     buf, 
+        #     as_attachment=True,
+        #     download_name='project_data.csv',
+        #     mimetype='text/csv'
+        # )
+    except AppMessageException as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+    except Exception as e:
+        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+
+
+@document_apis_blueprint.route('/kml', methods=['GET'])
+@cross_origin()
+def documents_get_kml():
+    g_var.__api_name__ = 'documents_get_kml'
+
+    g_var.__log_it__ = False
+    g_var.__session_id__ = None
+    g_var.__description_data__ = {}
+    g_var.__request_data__ = request.args.to_dict()
+
+    try:
+        session_id = request.args.get('session_id')
+
+        known_session = UserSessions.find_by_session_id(session_id)
+        if not known_session:
+            raise AppMessageException('invalid session')
+
+        g_var.__session_id__ = session_id
+
+        geometry = db.session.query(db.func.ST_AsKML(Polygons.geom)).filter(Polygons.session_id == session_id).scalar()
+        if not geometry:
+            raise AppMessageException('invalid data')
+
+        name = escape(known_session.project_name or session_id)
+        kml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>{0}</name>'
+            '<Placemark><name>{0}</name>{1}</Placemark></Document></kml>\n'
+        ).format(name, geometry)
+
+        return send_file(
+            BytesIO(kml.encode('utf-8')),
+            as_attachment=True,
+            download_name='aoi.kml',
+            mimetype='application/vnd.google-earth.kml+xml'
         )
     except AppMessageException as e:
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
