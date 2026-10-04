@@ -2677,6 +2677,7 @@ paths:
                         required:
                           - selections
                           - activities
+                          - ecosystems
                         properties:
                           selections:
                             type: object
@@ -2694,8 +2695,10 @@ paths:
                           activities:
                             type: array
                             description: >-
-                              the AOI's eligible activity rows; join to
-                              `/documents/monitoring/v3/activities` by
+                              the benefit run's activity rows: the AOI's
+                              eligible activities on the toggled-on pathways,
+                              narrowed to the chosen ids when any were chosen;
+                              join to `/documents/monitoring/v3/activities` by
                               activity_id for the indicator catalogue
                             items:
                               type: object
@@ -2707,6 +2710,46 @@ paths:
                                 pathway:
                                   type: string
                                   enum: [Protect, Manage, Restore]
+                          ecosystems:
+                            type: array
+                            description: >-
+                              the pathway-selection cards exactly as the
+                              pathway screen listed them: every ecosystem,
+                              every intervention and every available activity
+                              in the same order, unfiltered by the user's
+                              choices (tick them from `selections`). Empty for
+                              sessions without a v3 pathway run
+                            items:
+                              type: object
+                              properties:
+                                ecosystem:
+                                  type: string
+                                  examples:
+                                    - Dryland
+                                key:
+                                  type: string
+                                  enum: [forest, mangrove, peatland]
+                                  description: the `selections` key for this card
+                                label:
+                                  type: string
+                                  enum: [Forest, Mangrove, Peatland]
+                                interventions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      intervention:
+                                        type: string
+                                        enum: [Protect, Manage, Restore]
+                                      activities:
+                                        type: array
+                                        items:
+                                          type: object
+                                          properties:
+                                            activity_id:
+                                              type: string
+                                            activity:
+                                              type: string
           description: Success
         "400":
           $ref: "#/components/responses/Bad Request"

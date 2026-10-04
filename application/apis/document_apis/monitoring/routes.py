@@ -44,9 +44,8 @@ def documents_monitoring_v3_get():
 
         analyzer, form, user_input = load_draft(session_id, 'MonitoringV3', _BASE_TYPES)
 
-        # Read-only seed for the F05 plan builder, straight from the benefit run: the user's
-        # pathway-screen selections, and the AOI's activity/benefit rows so the frontend can
-        # resolve activity ids to names and build the initial matrix. Never merged into the
+        # Read-only seed for the F05 plan builder: the user's pathway-screen selections and the
+        # selected activity rows from the benefit run, plus the pathway cards themselves. Never merged into the
         # stored draft -- a seeded `mpPlan` would be clobbered wholesale by the first save,
         # and stored answers must keep winning.
         benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
@@ -54,9 +53,25 @@ def documents_monitoring_v3_get():
 
         # Indicator rows live in /monitoring/v3/activities (static, HTTP-cached); this seed
         # stays per-session and slim: the frontend joins the two by activity_id.
+        # The pathway screen's own cards (ecosystem -> intervention -> activities, its order and
+        # dedup), so step 1 can list exactly what the user saw there. Legacy v2 rows store a list
+        # in this column and have no cards.
+        pathway = (getattr(analyzer, 'intervention_eligibility_json', None) if analyzer else None)
+        cards = (pathway.get('ecosystems') or []) if isinstance(pathway, dict) else []
+
         plan_seed = {
             'selections': (benefit.get('assumptions') or {}).get('selections') or {},
             'activities': general.get('activities') or [],
+            'ecosystems': [{
+                'ecosystem': card.get('ecosystem'),
+                'key': str(card.get('label') or '').lower(),
+                'label': card.get('label'),
+                'interventions': [{
+                    'intervention': i.get('intervention'),
+                    'activities': [{'activity_id': a.get('activity_id'), 'activity': a.get('activity')}
+                                   for a in i.get('activities') or []],
+                } for i in card.get('interventions') or []],
+            } for card in cards if isinstance(card, dict)],
         }
 
         results = {'form': form, 'user_input': user_input, 'plan_seed': plan_seed}
