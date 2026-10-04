@@ -2852,12 +2852,25 @@ paths:
                               description: >-
                                 join key to plan_seed.activities; null for
                                 catalogue activities not yet in the canonical
-                                activity table
+                                activity table. The same activity text can
+                                appear once per id (e.g. a Dryland forest and a
+                                Savanna id) with identical indicators
                             activity:
                               type: string
                             ecosystem:
                               type: string
                               enum: [forest, mangrove, peatland]
+                            ecosystem_label:
+                              type: string
+                              nullable: true
+                              description: >-
+                                the catalog ecosystem this id belongs to, e.g.
+                                `Dryland forest` or `Savanna`; tells apart two
+                                items sharing one activity text. Null when
+                                activity_id is null
+                              examples:
+                                - Dryland forest
+                                - Savanna
                             pathway:
                               type: string
                               enum: [Protect, Manage, Restore]
@@ -2891,8 +2904,8 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
-        F05. The full monitoring-indicator catalogue: every NbS activity with
-        its ecosystem, pathway and indicator rows (indicator, unit, frequency,
+        F05. The full monitoring-indicator catalogue: every NbS activity, one
+        item per activity_id, with its ecosystem, pathway and indicator rows (indicator, unit, frequency,
         method, reference, definition, grouped by benefit). Session
         independent and served with `Cache-Control: public, max-age=86400` --
         fetch once and reuse; per-session data stays on

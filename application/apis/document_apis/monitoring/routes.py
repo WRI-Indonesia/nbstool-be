@@ -13,7 +13,7 @@ from ....utils.common import app_exception_handler, success_handler
 
 from ....utils.document_generator.v3 import generate_monitoring_v3
 from ....utils.geos.v3.common import load_activity_table, load_longform_table, norm_activity
-from ....utils.geos.v3.config import ACTIVITY_TABLE, LONGFORM_TABLE
+from ....utils.geos.v3.config import ACTIVITY_TABLE, LONGFORM_TABLE, PATHWAY_ECOSYSTEM_CODES
 from ....models.geos_models.models import DataAnalyzer
 from ....models.master_models.models import DocumentList
 from ..utils import generate_extra_tags, load_draft, save_draft
@@ -67,8 +67,9 @@ def documents_monitoring_v3_get():
         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
-# The full monitoring-indicator catalogue: 31 activities, each with its ecosystem, pathway and
-# indicator rows from the activities-longform matrix. Session-independent, so it is served with
+# The full monitoring-indicator catalogue: the 31 longform activities, one item per catalog
+# activity_id, each with its ecosystem, pathway and indicator rows from the activities-longform
+# matrix. Session-independent, so it is served with
 # a day of HTTP cache -- browsers and the CDN reuse it across sessions instead of every
 # /monitoring/v3 GET carrying ~40 indicator rows per activity. The frontend joins it to
 # plan_seed.activities by activity_id (ids come from the canonical catalog; the longform
@@ -81,18 +82,23 @@ def documents_monitoring_v3_activities():
 
     try:
         longform = load_longform_table(LONGFORM_TABLE)
+        # One text can carry several ids (one per catalog ecosystem, e.g. Dryland 11 / Savanna
+        # 14), and plan_seed carries whichever the AOI hit -- so emit one item per id.
         ids = {}
-        for rows in load_activity_table(ACTIVITY_TABLE).values():
+        for (_, ec), rows in load_activity_table(ACTIVITY_TABLE).items():
             for row in rows:
-                ids.setdefault(norm_activity(row['activity']), row['activity_id'])
+                ids.setdefault(norm_activity(row['activity']), {}).setdefault(
+                    row['activity_id'], PATHWAY_ECOSYSTEM_CODES.get(ec))
 
         items = [{
-            'activity_id': ids.get(key),
+            'activity_id': activity_id,
             'activity': slot['activity'],
             'ecosystem': slot['ecosystem'],
+            'ecosystem_label': label,
             'pathway': slot['pathway'],
             'indicators': list(slot['indicators']),
-        } for key, slot in longform.items()]
+        } for key, slot in longform.items()
+          for activity_id, label in (ids.get(key) or {None: None}).items()]
         items.sort(key=lambda i: (i['ecosystem'], i['pathway'], i['activity']))
 
         response = make_response(jsonify(success_handler({'result': {'activities': items}})), 200)
