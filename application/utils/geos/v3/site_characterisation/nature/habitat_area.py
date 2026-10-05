@@ -74,11 +74,12 @@ try:
         AOH_GEOD_ELLPS,
         AOH_INVENTORY,
         AOH_MAX_WORKERS,
+        AOH_MAX_WORKERS_SETTING,
         AOH_RASTER_ROOT,
         AOH_TARGET_DN,
         AOH_TAXON_FIELDS,
     )
-    from ...settings import layer_path
+    from ...settings import get_setting, layer_path
 except ImportError:  # `python habitat_area.py`: no package around it
     import pathlib
     import sys
@@ -90,11 +91,12 @@ except ImportError:  # `python habitat_area.py`: no package around it
         AOH_GEOD_ELLPS,
         AOH_INVENTORY,
         AOH_MAX_WORKERS,
+        AOH_MAX_WORKERS_SETTING,
         AOH_RASTER_ROOT,
         AOH_TARGET_DN,
         AOH_TAXON_FIELDS,
     )
-    from settings import layer_path
+    from settings import get_setting, layer_path
 
 GEOD = Geod(ellps=AOH_GEOD_ELLPS)
 
@@ -245,7 +247,9 @@ def analyze_biodiversity(aoi: AOI, target_dn: int = AOH_TARGET_DN) -> dict:
     if len(candidates):
         # The only departure from the notebook's loop: the opens overlap. Nothing about how a
         # single raster is read changes, and the table is sorted below, so order is not carried.
-        with ThreadPoolExecutor(max_workers=AOH_MAX_WORKERS) as pool:
+        # Width is per environment -- see AOH_MAX_WORKERS_SETTING.
+        workers = int(get_setting(AOH_MAX_WORKERS_SETTING, default=str(AOH_MAX_WORKERS)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             for record, failure in pool.map(
                 lambda r: _species_habitat(r, aoi_geometry, aoi_crs, aoi_area_ha, target_dn),
                 (r for _, r in candidates.iterrows()),

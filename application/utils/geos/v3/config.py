@@ -628,6 +628,12 @@ AOH_GEOD_ELLPS = "WGS84"
 # it. ~400 candidates on a typical AOI at 0.6 s per HTTP open is 4 minutes serially; at 16 it is
 # ~25 s cold. Verified to return an identical species table to the serial loop.
 AOH_MAX_WORKERS = 16
+# tbl_master_settings row that overrides AOH_MAX_WORKERS per environment, read per request like
+# AOH_RASTER_ROOT_SETTING. No row means AOH_MAX_WORKERS above. The pool is per RUN, and RAM grows
+# ~6 MB per worker (AOI1, 443 candidates, 2026-10-06): 16 = 24 s / +126 MB, 48 = 9 s / +307 MB,
+# 64 = 6.5 s / +350 MB. Sized against the box: worst case is every site-characterisation slot on
+# it in 2.3 at once (5 processes x 2 slots), so 48 suits a 12 GB VM, not the 8 GB one.
+AOH_MAX_WORKERS_SETTING = "AOH_MAX_WORKERS"
 # GDAL options for those opens, and they are worth more than the thread pool is. By default GDAL
 # probes for sidecars (.aux.xml, .ovr, .msk, ...) before reading a file, which over /vsicurl is
 # several extra HTTP round trips PER RASTER -- times ~400 rasters. Telling it the directory is

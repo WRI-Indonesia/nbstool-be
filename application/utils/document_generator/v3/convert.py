@@ -201,16 +201,31 @@ _NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 REFERENCE_TABLE_HEADER = "DATA TAG"
 REFERENCE_HEADING = "Data Tag Reference"
+LEGEND_START = "Placeholder key"
 
 
 def _drop_reference_table(doc) -> bool:
-    """Delete the draft's Data Tag Reference table and its heading paragraph.
+    """Delete the draft's authoring page: placeholder legend, Data Tag Reference heading + table.
 
-    The table is the doc team's authoring aid (every tag, its source, where it appears), not
-    document content -- team decision 2026-08-31. Must run BEFORE conversion: with it gone,
-    occurrence numbering starts at the first REAL use of a tag, which is what the
-    FEASIBILITY_OCCURRENCES rules assume.
+    The page is the doc team's authoring aid (tag key, sources, every tag and where it appears),
+    not document content -- team decision 2026-08-31 (table), 2026-10-06 (legend + its page
+    break; the section break after it already starts Summary on a new page). Must run BEFORE
+    conversion: with it gone, occurrence numbering starts at the first REAL use of a tag, which
+    is what the FEASIBILITY_OCCURRENCES rules assume.
     """
+    for paragraph in list(doc.paragraphs):
+        if paragraph.text.strip().startswith(LEGEND_START):
+            el = paragraph._element
+            prev = el.getprevious()
+            if prev is not None and any(br.get(qn("w:type")) == "page" for br in prev.iter(f"{_NS}br")) \
+                    and not "".join(prev.itertext()).strip():
+                prev.getparent().remove(prev)
+            # legend paragraphs run up to the reference heading (removed below) or the section break
+            while el is not None and REFERENCE_HEADING.lower() not in "".join(el.itertext()).lower() \
+                    and el.find(f".//{_NS}sectPr") is None:
+                nxt = el.getnext()
+                el.getparent().remove(el)
+                el = nxt
     dropped = False
     for table in list(doc.tables):
         if table.rows and REFERENCE_TABLE_HEADER in table.rows[0].cells[0].text.upper():
