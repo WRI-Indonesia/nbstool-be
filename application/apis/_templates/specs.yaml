@@ -2750,6 +2750,15 @@ paths:
                                               type: string
                                             activity:
                                               type: string
+                                            ecosystem_label:
+                                              type: string
+                                              nullable: true
+                                              description: >-
+                                                the activity's catalog ecosystem, as
+                                                on the pathway screen; null for
+                                                pathway runs stored before it existed
+                                              examples:
+                                                - Savanna
           description: Success
         "400":
           $ref: "#/components/responses/Bad Request"
@@ -4530,6 +4539,15 @@ components:
             properties:
               activity_id: {type: string}
               activity: {type: string}
+              ecosystem_label:
+                type: string
+                description: >-
+                  the catalog ecosystem this activity comes from. The Forest card
+                  also lists Savanna activities, some with the same text as a
+                  Dryland forest one; this tells them apart
+                examples:
+                  - Dryland forest
+                  - Savanna
 
     SiteCharacterisationLine:
       type: object

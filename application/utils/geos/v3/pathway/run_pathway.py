@@ -81,7 +81,7 @@ def _activities_for(categories: dict, pathway: str) -> list[dict]:
     """
     seen: set[str] = set()
     out: list[dict] = []
-    for _key, info in sorted(categories.items(), key=lambda kv: kv[1]["area_ha"], reverse=True):
+    for key, info in sorted(categories.items(), key=lambda kv: kv[1]["area_ha"], reverse=True):
         if info["pathway"] != pathway:
             continue
         for activity in info.get("activities", ()):
@@ -89,7 +89,10 @@ def _activities_for(categories: dict, pathway: str) -> list[dict]:
                 continue
             seen.add(activity["activity_id"])
             out.append({"activity_id": activity["activity_id"],
-                        "activity": activity["activity"]})
+                        "activity": activity["activity"],
+                        # The category's own ecosystem ("Cat 1 | Savanna" -> "Savanna"): the
+                        # Dryland card also carries folded-in Savanna rows, often with the same text.
+                        "ecosystem_label": key.rsplit("|", 1)[-1].strip()})
     return out
 
 

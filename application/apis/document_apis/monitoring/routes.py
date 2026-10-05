@@ -68,7 +68,8 @@ def documents_monitoring_v3_get():
                 'label': card.get('label'),
                 'interventions': [{
                     'intervention': i.get('intervention'),
-                    'activities': [{'activity_id': a.get('activity_id'), 'activity': a.get('activity')}
+                    'activities': [{'activity_id': a.get('activity_id'), 'activity': a.get('activity'),
+                                    'ecosystem_label': a.get('ecosystem_label')}
                                    for a in i.get('activities') or []],
                 } for i in card.get('interventions') or []],
             } for card in cards if isinstance(card, dict)],
