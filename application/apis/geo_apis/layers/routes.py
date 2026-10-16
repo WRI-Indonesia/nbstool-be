@@ -101,6 +101,8 @@ def func_get_layers_v2():
         country, has_child, parent_id
     from "public"."vwLayers_v2"
     '''
+    if current_app.config.get('ENV') == 'production':
+        query += ' where staging_only = false '
     dt = GeoUtils.get_db(db.text(query))
     current_app.logger.info("--- %s seconds --- query the vwLayers results" % (time.time() - start_section_time))
 
