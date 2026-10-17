@@ -92,12 +92,7 @@ def func_get_layers_v2():
     start_section_time = time.time()
     query = '''
     select
-        layer_id, layer_group, layer_name, source, source_link,
-        citation, description, short_description, content_date,
-        disclaimer, data_format, spatial_resolution, gs_name,
-        gs_type, gs_url, gs_srs, gs_style, gs_format, gs_version,
-        group_code, group_image, order_no, matrix_set,
-        country, has_child, parent_id
+        *
     from "public"."vwLayers_v2"
     '''
     if current_app.config.get('ENV') == 'production':
