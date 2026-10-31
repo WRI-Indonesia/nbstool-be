@@ -49,10 +49,17 @@ def geo_map_upload():
         if not file:
             raise AppMessageException('No selected file')
         if not file.filename:
-            raise appmessageexception('No selected file')
+            raise AppMessageException('No selected file')
         if not GeoUtils.allowed_file(file.filename):
             raise AppMessageException('Invalid file format, only ZIP, KML or KMZ files are allowed')
-        
+
+        # session_id becomes a folder that is rmtree'd after processing; only a canonical uuid is safe
+        if session_id:
+            try:
+                session_id = str(uuid.UUID(session_id))
+            except ValueError:
+                raise AppMessageException('Invalid session_id')
+
         if not session_id:
             session_id = str(uuid.uuid4())
 
@@ -185,18 +192,18 @@ def geo_get_map_location():
 
         filter_text = data.get('filter')
 
-        query = '''
+        query = db.text('''
         select
             location_value,
             location_name,
             display_name,
             location_type
         from public."mvwSearchLocation"
-        where lower(location_name) ~~ lower('%{}%')
+        where lower(location_name) ~~ lower(:pattern)
         limit 10
-        '''.format(filter_text)
+        ''').bindparams(pattern=f"%{filter_text or ''}%")
 
-        dt = GeoUtils.get_db(db.text(query))
+        dt = GeoUtils.get_db(query)
 
         items = []
         for row in dt:
@@ -227,14 +234,14 @@ def geo_search_map_location():
 
         location_name = data.get('location_name')
 
-        query = '''
+        query = db.text('''
         select
             lat, lng
         from public."mvwGetLocation"
-        where location_value = '{}'
-        '''.format(location_name)
+        where location_value = :location_value
+        ''').bindparams(location_value=str(location_name or ''))
 
-        dt = GeoUtils.get_db(db.text(query))
+        dt = GeoUtils.get_db(query)
 
         results = { }
         for row in dt:

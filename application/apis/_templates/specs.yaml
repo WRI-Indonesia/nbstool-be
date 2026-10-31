@@ -760,6 +760,7 @@ paths:
                   description: ZIP, KML, or KMZ file
                 session_id:
                   type: string
+                  format: uuid
                   examples:
                     - b06e52c5-694d-4890-9a0e-ae9e4a581da5
                 user_id:
