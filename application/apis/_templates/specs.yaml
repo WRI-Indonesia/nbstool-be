@@ -1768,10 +1768,12 @@ paths:
           $ref: "#/components/responses/Bad Request"
         "401":
           $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
-      description: update project name
+      description: update project name (owner only)
       operationId: updateProject
       requestBody:
         content:
@@ -1816,10 +1818,12 @@ paths:
           $ref: "#/components/responses/Bad Request"
         "401":
           $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
-      description: soft-delete a project by deactivating it
+      description: soft-delete a project by deactivating it (owner only)
       operationId: deleteProject
       requestBody:
         content:
@@ -1949,12 +1953,15 @@ paths:
           $ref: "#/components/responses/Bad Request"
         "401":
           $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
         bind a session to a user project, creating a new project or updating
-        an existing one. Called after the benefit step.
+        an existing one. Called after the benefit step. A session already
+        bound to another user's project is rejected with 403.
 
         Besides marking the session as a project, this SEEDS the feasibility
         form draft with the analyser prefill (see
@@ -2072,10 +2079,18 @@ paths:
           description: PNG, wide frame (about 2.8:1)
         "400":
           $ref: "#/components/responses/Bad Request"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters:
         - $ref: "#/components/parameters/project_id"
+        - in: query
+          name: sig
+          required: true
+          schema:
+            type: string
+          description: signature from `boundary_map_url`; use that URL as given
       description: >-
         the project area on a basemap with its ecosystem types (Dryland forest /
         Mangrove / Peatland / Other) and outline -- the dashboard card picture,
@@ -2083,7 +2098,9 @@ paths:
         `POST /projects/bind` and redrawn at every document generate. A
         project whose map is not there (never bound, or the drawing failed)
         gets the stock project picture instead, so the card always has an
-        image; 400 only for an unknown project id.
+        image; 400 only for an unknown project id. No login, but the URL is
+        signed: only the `boundary_map_url` from the owner's project list or
+        detail opens it (403 otherwise).
       operationId: projectBoundaryMap
 
   /projects/statistics:
@@ -2173,11 +2190,13 @@ paths:
           $ref: "#/components/responses/Bad Request"
         "401":
           $ref: "#/components/responses/No Auth"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters:
         - $ref: "#/components/parameters/project_id"
-      description: get all documents associated with a project
+      description: get all documents associated with a project (owner only)
       operationId: getProjectDocuments
 
   /documents/docx:
@@ -3830,7 +3849,7 @@ components:
           description: path of the card picture (`GET /projects/boundary-map`), to
             be resolved against the API base the client called
           examples:
-            - /projects/boundary-map?project_id=c6276049-3d5f-4396-933a-a0318b2b2e09
+            - /projects/boundary-map?project_id=c6276049-3d5f-4396-933a-a0318b2b2e09&sig=3f1c...
         created_at:
           type: [string, "null"]
         updated_at:

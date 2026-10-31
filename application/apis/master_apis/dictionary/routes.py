@@ -42,6 +42,8 @@ def listdata_dictionary():
         order_by = []
         if param.get('order_by_col') and param.get('order_by_type'):
             for order_col, order_type in zip(param.get('order_by_col').split(','), param.get('order_by_type').split(',')):
+                # order_type lands in raw ORDER BY text; allow only the two directions
+                order_type = 'desc' if order_type.strip().lower() == 'desc' else 'asc'
                 if order_col.lower().strip() == 'name':
                     order_by.append('master_dictionary.name ' + ' ' + order_type)
                     continue

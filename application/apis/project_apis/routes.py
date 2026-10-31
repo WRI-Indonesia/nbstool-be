@@ -13,6 +13,7 @@ from flask_cors import cross_origin
 
 import os
 import gc
+import hmac
 import json
 import uuid
 import string
@@ -56,7 +57,9 @@ def projects_bind_project():
         data = request.get_json()
 
         session_id = data.get('session_id')
-        user_id = current_user.id if current_user.is_authenticated else data.get('user_id')
+        if not session_id:
+            raise AppMessageException('session_id is required')
+        user_id = current_user.id
         template_type = data.get('template_type')
         privacy_level = data.get('privacy_level')
         # optional; bool is an int subclass: `true` must not pass as 1
@@ -86,6 +89,14 @@ def projects_bind_project():
         g_var.__description_data__['project_name'] = project_name
 
         known_project = UserSessions.find_by_session_id(session_id)
+        # anonymous sessions (user_id None) stay claimable; another user's project does not,
+        # inactive (deleted) rows included, or rebinding a deleted session would hand over its data
+        foreign_owner = UserSessions.query.filter(UserSessions.session_id == session_id,
+                                                  UserSessions.user_id.isnot(None),
+                                                  UserSessions.user_id != 0,  # legacy anonymous rows
+                                                  UserSessions.user_id != user_id).first()
+        if foreign_owner:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can bind this project', 403)), 403)
         if not known_project:
             known_project = UserSessions()
             known_project.user_id = user_id
@@ -352,10 +363,15 @@ def _present(path):
     return os.path.exists(path) and os.path.getsize(path) > 0
 
 
+def _boundary_map_sig(session_id):
+    return hmac.new(current_app.config['SECRET_KEY'].encode(), ('boundary-map:' + session_id).encode(), 'sha256').hexdigest()
+
+
 def _boundary_map_url(session_id):
     # A PATH, not an absolute URL, for the same reason the analysis retry_url is one: behind the
     # proxy `url_root` is the internal host. The client resolves it against the API base.
-    return url_for('project_apis.projects_boundary_map', project_id=session_id)
+    # Signed: the route has no login, so only the URL handed to the owner opens the picture.
+    return url_for('project_apis.projects_boundary_map', project_id=session_id, sig=_boundary_map_sig(session_id))
 
 
 @project_apis_blueprint.route('/list', methods=['GET'])
@@ -451,7 +467,8 @@ def projects_list():
 # legacy: /nbsapi/project-management/project-detail [POST]
 # The project boundary map picture (Figure 2 of the feasibility document; drawn and uploaded at
 # /bind and again at every document generate), proxied from GCS for the dashboard card. Not login-gated,
-# like the document downloads: the card's <img> cannot carry the session cookie cross-origin.
+# like the document downloads: the card's <img> cannot carry the session cookie cross-origin. Instead the
+# URL carries `sig` (see _boundary_map_url), given out only in the owner's project list/detail.
 @project_apis_blueprint.route('/boundary-map', methods=['GET'])
 @cross_origin()
 def projects_boundary_map():
@@ -461,6 +478,8 @@ def projects_boundary_map():
         session_id = request.args.get('project_id')
         if not session_id:
             raise AppMessageException('please provide project_id')
+        if not hmac.compare_digest(request.args.get('sig') or '', _boundary_map_sig(session_id)):
+            return make_response(jsonify(app_exception_handler('forbidden, invalid map link', 403)), 403)
         if not Polygons.find_by_session_id(session_id):
             raise AppMessageException('fail, project id Not found')
 
@@ -674,7 +693,9 @@ def projects_update():
         known_project = UserSessions.find_by_session_id(project_id)
         if not known_project:
             raise AppMessageException('fail. project not found')
-        
+        if known_project.user_id != current_user.id:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can update this project', 403)), 403)
+
         known_project.project_name = project_name
 
         db.session.add(known_project)
@@ -767,7 +788,9 @@ def projects_delete():
         known_project = UserSessions.find_by_session_id(project_id)
         if not known_project:
             raise AppMessageException('fail. project not found')
-        
+        if known_project.user_id != current_user.id:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can delete this project', 403)), 403)
+
         g_var.__description_data__['project_name'] = known_project.project_name
         
         known_project.is_active = 0
@@ -796,7 +819,11 @@ def projects_documents():
         data = request.args
 
         project_id = data.get('project_id')
-        
+
+        known_project = UserSessions.find_by_session_id(project_id)
+        if not known_project or known_project.user_id != current_user.id:
+            return make_response(jsonify(app_exception_handler('forbidden, only the project owner can view its documents', 403)), 403)
+
         known_document_list = DocumentList.find_by_project_id(project_id)
         
         items = []
