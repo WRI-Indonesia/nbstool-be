@@ -43,7 +43,7 @@ def geo_map_upload():
         data = request.form
         
         session_id = data.get('session_id')
-        user_id = data.get('user_id') if data.get('user_id') else 0
+        user_id = current_user.id if current_user.is_authenticated else 0
         file = request.files.get('file')
 
         if not file:

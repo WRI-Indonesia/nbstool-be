@@ -715,10 +715,6 @@ paths:
                   type: string
                   examples:
                     - b06e52c5-694d-4890-9a0e-ae9e4a581da5
-                user_id:
-                  type: integer
-                  examples:
-                    - 1
         required: true
 
   /geos/map/upload:
@@ -763,10 +759,6 @@ paths:
                   format: uuid
                   examples:
                     - b06e52c5-694d-4890-9a0e-ae9e4a581da5
-                user_id:
-                  type: integer
-                  examples:
-                    - 1
         required: true
 
   /geos/map/explorer:
@@ -3010,28 +3002,6 @@ paths:
         `CCB` as "CCB Project Documentation.docx",
         anything else as the legacy "Preliminary Assessment Document.docx".
       operationId: downloadDocx
-
-  /documents/download/docx-ccb:
-    get:
-      tags:
-        - Document module
-      summary: download ccb docx
-      responses:
-        "200":
-          content:
-            application/msword:
-              schema:
-                type: string
-                format: binary
-          description: DOCX file download
-        "400":
-          $ref: "#/components/responses/Bad Request"
-        "500":
-          $ref: "#/components/responses/Internal Server Error"
-      parameters:
-        - $ref: "#/components/parameters/document_id"
-      description: download a CCB Preliminary Assessment DOCX file
-      operationId: downloadCcbDocx
 
   /documents/download/xlsx:
     get:

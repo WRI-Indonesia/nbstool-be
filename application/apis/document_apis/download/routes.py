@@ -27,28 +27,30 @@ from .. import gcs
 DOCX_MIMETYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 
+# off: unused by the v2 FE (it downloads CCB via /download/docx); the file name was built from
+# document_id instead of DocumentList.document_name, so it served 0-byte files.
 # legacy: /nbsapi/front-service/download/docx-ccb [POST]
-@document_apis_blueprint.route('/download/docx-ccb', methods=['GET'])
-@cross_origin()
-def documents_get_document_download_docx_ccb():
-    g_var.__api_name__ = 'documents_get_document_download_docx_ccb'
-
-    try:
-        data = request.args
-
-        document_id = data.get('document_id')
-
-        gcs.download("generated-file/docx-ccb/"+document_id+"-ccb-templates.docx")
-        document_path = Path("generated-file/docx-ccb/"+document_id+"-ccb-templates.docx").resolve()
-
-        if not os.path.exists(document_path):
-            raise AppMessageException('we are still generating your file, please wait a minute')
-        
-        return send_file(document_path, mimetype=DOCX_MIMETYPE, as_attachment=True, download_name="Preliminary Assessment Document.docx")
-    except AppMessageException as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
-    except Exception as e:
-        return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
+# @document_apis_blueprint.route('/download/docx-ccb', methods=['GET'])
+# @cross_origin()
+# def documents_get_document_download_docx_ccb():
+#     g_var.__api_name__ = 'documents_get_document_download_docx_ccb'
+#
+#     try:
+#         data = request.args
+#
+#         document_id = data.get('document_id')
+#
+#         gcs.download("generated-file/docx-ccb/"+document_id+"-ccb-templates.docx")
+#         document_path = Path("generated-file/docx-ccb/"+document_id+"-ccb-templates.docx").resolve()
+#
+#         if not os.path.exists(document_path):
+#             raise AppMessageException('we are still generating your file, please wait a minute')
+#
+#         return send_file(document_path, mimetype=DOCX_MIMETYPE, as_attachment=True, download_name="Preliminary Assessment Document.docx")
+#     except AppMessageException as e:
+#         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 400) # send bad request
+#     except Exception as e:
+#         return make_response(jsonify(app_exception_handler(e, services=g_var.__api_name__)), 500) # send internal error
 
 
 # legacy: /nbsapi/front-service/download/xlsx [POST]
@@ -129,7 +131,7 @@ def documents_get_document_download_docx():
         
         gcs.download(folder_path + known_document.document_name)
         document_path = Path(folder_path + known_document.document_name).resolve()
-        if not os.path.exists(document_path):
+        if not os.path.exists(document_path) or os.path.getsize(document_path) == 0:
             raise AppMessageException('we are still generating your file, please wait a minute')
         
         return send_file(document_path, mimetype=DOCX_MIMETYPE, as_attachment=True, download_name=client_name)
