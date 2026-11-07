@@ -2370,6 +2370,8 @@ paths:
           description: Success
         "400":
           $ref: "#/components/responses/Bad Request"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters:
@@ -2385,7 +2387,10 @@ paths:
           required: true
           description: type of certification document
           allowReserved: false
-      description: retrieve CCB document section data for a session
+      description: >-
+        retrieve CCB document section data for a session. If the session exists
+        but no CCB form was saved yet, returns an empty form (sections 1-4 `{}`,
+        section_5 with empty `project_fauna` and `summary_fauna` lists).
       operationId: getCcb
     post:
       tags:
@@ -2411,6 +2416,8 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/Bad Request"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/Internal Server Error"
       parameters: []

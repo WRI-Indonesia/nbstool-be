@@ -134,6 +134,21 @@ def _tpl_data_v3(session_id, analyzer):
 
 
 # legacy: /nbsapi/feature/document-data [POST]
+def _not_session_owner(session_id):
+    """True when the session belongs to a user and the caller is not that user. Same rule as
+    /projects/bind: anonymous sessions (user_id NULL or legacy 0) stay open; inactive rows count."""
+    owned = UserSessions.query.filter(UserSessions.session_id == session_id,
+                                      UserSessions.user_id.isnot(None),
+                                      UserSessions.user_id != 0)
+    if current_user.is_authenticated:
+        owned = owned.filter(UserSessions.user_id != current_user.id)
+    return owned.first() is not None
+
+
+def _forbidden():
+    return make_response(jsonify(app_exception_handler('forbidden, only the project owner can access this document', 403)), 403)
+
+
 @document_apis_blueprint.route('/ccb', methods=['POST'])
 @cross_origin()
 def documents_update_document_data_ccb():
@@ -161,7 +176,9 @@ def documents_update_document_data_ccb():
         known_session_auth = SessionsAuth.find_by_session_id(session_id)
         if not known_session_auth:
             raise AppMessageException('Fail, session id not found')
-        
+        if _not_session_owner(session_id):
+            return _forbidden()
+
         g_var.__session_id__ = session_id
         
         status_code = 200
@@ -277,12 +294,27 @@ def documents_get_document_data_ccb():
         session_id = data.get('session_id')
         document_type = data.get('document_type')
 
+        if _not_session_owner(session_id):
+            return _forbidden()
+
         known_document_data = DocumentData.find_by_session_id_and_type(session_id, document_type)
         if not known_document_data:
-            raise AppMessageException('fail, session id Not found')
-        
+            if not SessionsAuth.find_by_session_id(session_id):
+                raise AppMessageException('fail, session id Not found')
+            # session exists but form never saved: empty form so FE can start filling it
+            g_var.__session_id__ = session_id
+            results = {
+                'section_1': {},
+                'section_2': {},
+                'section_3': {},
+                'section_4': {},
+                'section_5': {'project_fauna': [], 'summary_fauna': []},
+                'session_id': session_id,
+            }
+            return make_response(jsonify(success_handler({ 'result': results }, status_code=200)), 200)
+
         g_var.__session_id__ = session_id
-        
+
         results = {
             'session_id': session_id,
             'section_1': known_document_data.section_1,
