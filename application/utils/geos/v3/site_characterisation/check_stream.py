@@ -277,6 +277,28 @@ check("retry_url is null but retryable still tells the truth",
       lines[1]['error_status']['retry_url'] is None
       and lines[1]['error_status']['retryable'] is True)
 
+print("\n== 1.1 cards never sum past the site area")
+_seam = R._ecosystem_on_site_area
+_site = type('Site', (), {'area_ha': 100.0})()
+
+
+def _cards(*areas):
+    view = {'ecosystems': [{'area': a, 'percentage': a} for a in areas]}  # % of a 100 ha site
+    _seam.__globals__['analyze_ecosystem_type'] = lambda aoi: ({'kept': True}, view)
+    return _seam(_site)
+
+
+_real_11 = _seam.__globals__['analyze_ecosystem_type']
+res, view = _cards(100.4, 0.1, 0.0)      # pixels overcount: Other already clamped to 0
+check("an overcount is scaled back to the site area",
+      abs(sum(c['area'] for c in view['ecosystems']) - 100.0) < 1e-9
+      and abs(sum(c['percentage'] for c in view['ecosystems']) - 100.0) < 1e-9
+      and res == {'kept': True})
+res, view = _cards(60.0, 0.0, 39.5, 0.5)  # undercount: Other fills the gap, nothing to do
+check("an undercount is left exactly as 1.1 computed it",
+      [c['area'] for c in view['ecosystems']] == [60.0, 0.0, 39.5, 0.5])
+_seam.__globals__['analyze_ecosystem_type'] = _real_11
+
 R.COMPONENTS.clear()
 R.COMPONENTS.update(REAL)
 print(f"\n{sum(results)}/{len(results)} checks passed")

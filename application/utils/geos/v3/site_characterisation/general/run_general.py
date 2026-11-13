@@ -78,6 +78,26 @@ processes = [
 ]
 
 
+def _ecosystem_on_site_area(aoi: AOI) -> tuple[dict, dict]:
+    """1.1, with the CARD areas rescaled to sum to the site area when the pixels overcount it.
+
+    1.1 counts ~30 m pixels whose centre is inside the polygon; the site area is measured from the
+    outline. The two differ by edge noise of a few hectares either way. An undercount is already
+    absorbed by 1.1's Other slice, but an overcount has nowhere to go: the cards then sum past the
+    site and a fully mapped class reads over 100%. `results` is untouched, so the notebook figures
+    and `present_set` are exactly what 1.1 computed.
+    """
+    results, view = analyze_ecosystem_type(aoi)
+    cards = view['ecosystems']
+    total = sum(c['area'] for c in cards)
+    if total > aoi.area_ha:
+        scale = aoi.area_ha / total
+        for c in cards:
+            c['area'] *= scale
+            c['percentage'] *= scale
+    return results, view
+
+
 def _risk_after_admin(aoi: AOI, admin: tuple[dict, dict]) -> tuple[dict, dict]:
     """1.6, given 1.2's `(results, view_results)`.
 
@@ -119,7 +139,7 @@ def _run_components(aoi: AOI):
         admin = pool.submit(safe, 'administrative boundaries', analyze_admin_boundaries, aoi)
 
         futures = (
-            pool.submit(safe, 'ecosystem type', analyze_ecosystem_type, aoi),
+            pool.submit(safe, 'ecosystem type', _ecosystem_on_site_area, aoi),
             admin,
             pool.submit(safe, 'protected areas', analyze_protected_areas, aoi),
             pool.submit(safe, 'terrain', analyze_terrain, aoi),

@@ -77,12 +77,11 @@ try:
     from .climate.soil_classification import analyze_soil_classification
     from .climate.soil_organic_carbon import analyze_soil_organic_carbon
     from .general.administrative_boundaries import analyze_admin_boundaries
-    from .general.ecosystem_type import analyze_ecosystem_type
     from .general.historical_deforestation import analyze_historical_deforestation
     from .general.land_cover import analyze_land_cover
     from .general.natural_disaster_risk import analyze_natural_risk
     from .general.protected_areas_wdpa import analyze_protected_areas
-    from .general.run_general import _risk_after_admin
+    from .general.run_general import _ecosystem_on_site_area, _risk_after_admin
     from .general.run_general import processes as general_processes
     from .general.terrain_slope_elevation import analyze_terrain
     from .nature.conservation_significance import analyze_conservation_significance
@@ -110,7 +109,6 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from common import AOI
     from conservation_significance import analyze_conservation_significance
     from current_carbon_storage import analyze_current_carbon_storage
-    from ecosystem_type import analyze_ecosystem_type
     from endangered_trees import analyze_endangered_trees
     from fire_susceptibility import analyze_fire_susceptibility
     from forest_landscape_integrity import analyze_flii
@@ -126,7 +124,7 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from protected_areas_wdpa import analyze_protected_areas
     from run_climate import _carbon_shares
     from run_climate import processes as climate_processes
-    from run_general import _risk_after_admin
+    from run_general import _ecosystem_on_site_area, _risk_after_admin
     from run_general import processes as general_processes
     from run_nature import processes as nature_processes
     from run_people import processes as people_processes
@@ -189,7 +187,7 @@ def _social_after_admin(aoi: AOI, admin: tuple[dict, dict]) -> tuple[dict, dict]
 # sequence.
 _UNORDERED: dict[str, tuple] = {
     # General, 1.1 to 1.8
-    'ecosystem type':             (analyze_ecosystem_type, ()),
+    'ecosystem type':             (_ecosystem_on_site_area, ()),
     'administrative boundaries':  (analyze_admin_boundaries, ()),
     'protected areas':            (analyze_protected_areas, ()),
     'terrain':                    (analyze_terrain, ()),
