@@ -333,6 +333,9 @@ FEASIBILITY_OCCURRENCES = {
     "Potential Benefit: x": lambda n: (
         ("benefit_nature_count", "benefit_people_count",
          "benefit_climate_count")[(n - 1) % 3]),
+    # "[X] individuals attending primary education, [X] ... secondary ... and [X] ... higher".
+    "People: Education Level": lambda n: (
+        ("education_primary", "education_secondary", "education_higher")[(n - 1) % 3]),
 }
 
 MONITORING_OCCURRENCES = {

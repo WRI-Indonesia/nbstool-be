@@ -95,4 +95,21 @@ def generate_extra_tags(session_id: str) -> dict:
     organisation = getattr(current_user, 'organization_name', None)
     if organisation:
         tags['Name of Organisation or Entity'] = organisation
+    coordinates = _centroid_text(session_id)
+    if coordinates:
+        tags['Site Characterisation: Coordinates / Annex Reference'] = coordinates
     return tags
+
+
+def _centroid_text(session_id: str) -> str | None:
+    """'the project boundary file (centroid 7.1234° S, 108.1234° E)', or None without a polygon."""
+    from ...utils.geos.v3.common import prepare_aoi_from_session
+
+    try:
+        aoi = prepare_aoi_from_session(session_id)
+    except ValueError:
+        return None
+    point = aoi.geometry.centroid.to_crs("EPSG:4326").iloc[0]
+    lat = f"{abs(point.y):.4f}° {'S' if point.y < 0 else 'N'}"
+    lon = f"{abs(point.x):.4f}° {'W' if point.x < 0 else 'E'}"
+    return f"the project boundary file (centroid {lat}, {lon})"

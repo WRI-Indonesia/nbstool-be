@@ -20,13 +20,15 @@
 
 from __future__ import annotations
 
+import html
 import re
 
 _WS = re.compile(r"\s+")
 
 
 def _norm(tag: str) -> str:
-    return _WS.sub(" ", tag).strip()
+    # unescape: the template hands `t()` its tags XML-escaped ("IP&amp;LC").
+    return _WS.sub(" ", html.unescape(tag)).strip()
 
 
 def _ha(value) -> str | None:
@@ -144,6 +146,9 @@ def _site_characterisation_tags(si: dict, pathway: dict) -> dict:
     tags["Site Characterisation: Flood/Tropical typhoon/Landslide/Drought/Fire risk"] = risks
     tags["Site Characterisation: Flood / Tropical typhoon / Landslide / Drought / Fire risk"] = risks
 
+    # The boundary map is always drawn as Figure 2 (convert.FIGURE_VARIABLES).
+    tags["Site Characterisation: Project Boundary Map"] = "Figure 2"
+
     return tags
 
 
@@ -226,11 +231,6 @@ def _pathway_tags(pathway: dict, threat: dict) -> dict:
             tags[f"NbS Pathway: percent area eligible to {name.lower()}"] = _pct(
                 (totals.get(name) or 0) / project_area * 100)
     tags["NbS Pathway: List of NbS Activities"] = _join(activities)
-
-    duration = pathway.get("duration_years") or {}
-    if duration.get("default"):
-        tags["NbS Pathway: Duration of protection (10–40 years, default 30)"] = (
-            f"{duration['default']} years")
     return tags
 
 
@@ -275,7 +275,8 @@ def _nature_tags(nature: dict) -> dict:
     kba_names = [k.get("overlapping_key_biodiversity_name")
                  for k in nature.get("overlapping_key_biodiversity_areas", [])
                  if isinstance(k, dict)]
-    tags["Nature: KBA name(s) / count"] = _join(kba_names)
+    tags["Nature: KBA name(s) / count"] = _join(kba_names) or (
+        "none (0 KBAs)" if "overlapping_key_biodiversity_areas" in nature else None)
     tags["Nature: KBA overlap area"] = _ha(
         nature.get("overlapping_key_biodiversity_area_total_size"))
     tags["Nature: KBA overlap %"] = _pct(
@@ -341,13 +342,81 @@ _FORM_SCALARS = {
     "seSafeguard": ["People: Safeguard Information System"],
     "seGrievance": ["People: Grievance Redress Mechanism"],
     "seAdaptive": ["People: Adaptive Management Response Time"],
-    "seEmployment": ["People: Employment Status"],
-    "seLivelihood": ["People: Type of livelihood (Agriculture, Forestry, Fishery)"],
-    "seHhLivelihood": ["People: Household based on livelihood"],
-    "seIplc": ["People: IP&LC or Ethnicity Identification",
-               "People: identified IP&LC or ethnicity name",
-               "People: identified IP&LC community"],
 }
+
+# Display labels for the form's livelihood slugs (frontend SOCIO spec); unknown slugs fall back
+# to the slug with dashes as spaces.
+_LIVELIHOOD_LABELS = {
+    "formal-sectors": "formal sectors",
+    "informal-sectors": "informal sectors",
+    "entrepreneur": "entrepreneur",
+    "fishery-aquaculture": "fishery/aquaculture",
+    "nbs-agroforestry": "NbS agroforestry",
+    "nbs-reforestation": "NbS reforestation",
+    "nbs-mangrove-restoration": "NbS mangrove restoration",
+    "nbs-ntfp": "NbS NTFP",
+    "nbs-forest-patrol": "NbS forest patrol and protection",
+    "nbs-seedling-nursery": "NbS seedling nursery",
+    "agriculture-agroforestry": "agriculture/agroforestry",
+    "forestry-nbs": "forestry/NbS",
+    "other": "other",
+}
+_IPLC_TAGS = ("People: IP&LC or Ethnicity Identification",
+              "People: identified IP&LC or ethnicity name",
+              "People: identified IP&LC community")
+_AGE_BANDS = ("0–14", "15–44", "45+")
+
+
+def _num(value) -> float | None:
+    """A form number (int, float or numeric string) -> float; anything else -> None."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _counts_by_label(counts) -> str | None:
+    """{slug: households} -> 'label (n households), ...', largest first, zeros dropped."""
+    if not isinstance(counts, dict):
+        return None
+    rows = sorted(((_num(v) or 0, k) for k, v in counts.items()), key=lambda r: -r[0])
+    return _join(f"{_LIVELIHOOD_LABELS.get(k, k.replace('-', ' '))} ({n:,.0f} households)"
+                 for n, k in rows if n > 0)
+
+
+def _age_band(label) -> str | None:
+    """'0-4' / '15-19' / '65+' / '45-beyond' -> one of _AGE_BANDS, by the label's lower bound."""
+    match = re.match(r"\s*(\d+)", str(label))
+    if not match:
+        return None
+    low = int(match.group(1))
+    return _AGE_BANDS[0] if low < 15 else _AGE_BANDS[1] if low < 45 else _AGE_BANDS[2]
+
+
+def _age_structure(by_band: dict) -> str | None:
+    total = sum(by_band.values())
+    if not total:
+        return None
+    return _join(f"{band}: {by_band.get(band, 0):,.0f} ({by_band.get(band, 0) / total * 100:.1f}%)"
+                 for band in _AGE_BANDS)
+
+
+def _matrix_totals(matrix) -> dict:
+    """seMatrix {age: {education: {gender: n}}} -> totals per gender, age band and education."""
+    totals = {"gender": {}, "age": {}, "education": {}}
+    if not isinstance(matrix, dict):
+        return totals
+    for age, by_edu in matrix.items():
+        for edu, by_gender in (by_edu or {}).items() if isinstance(by_edu, dict) else ():
+            for gender, n in (by_gender or {}).items() if isinstance(by_gender, dict) else ():
+                n = _num(n) or 0
+                band = _age_band(age)
+                for group, key in (("gender", gender), ("age", band), ("education", edu)):
+                    if key:
+                        totals[group][key] = totals[group].get(key, 0) + n
+    return totals
 
 
 def _form_tags(form: dict) -> dict:
@@ -376,7 +445,53 @@ def _form_tags(form: dict) -> dict:
         tags["People: Number of Villages"] = len([n for n in names if n])
     elif villages not in (None, "", []):
         tags["People: Number of Villages"] = villages
-    return tags
+
+    totals = _matrix_totals(matrix)
+    gender = totals["gender"]
+    population = sum(gender.values())
+    if population:
+        tags["People: Gender disaggregation within Project Area (% Male / % Female / % Other)"] = (
+            " / ".join(f"{gender.get(g, 0) / population * 100:.1f}% {g.title()}"
+                       for g in ("male", "female", "other")))
+    tags["People: Age Group Within Project Area"] = _age_structure(totals["age"])
+
+    iplc = form.get("seIplc")
+    if isinstance(iplc, list):
+        names = _join(g.get("name") if isinstance(g, dict) else g for g in iplc)
+        for tag in _IPLC_TAGS:
+            tags[tag] = names
+
+    employment = form.get("seEmployment")
+    if isinstance(employment, dict):
+        employed = _num(employment.get("employed"))
+        tags["People: Employment Status"] = f"{employed:,.0f}" if employed is not None else None
+        # Employment-to-population ratio: the three answers cover the working-age population.
+        working_age = sum(_num(v) or 0 for v in employment.values())
+        if employed is not None and working_age:
+            tags["People: employment%"] = f"{employed / working_age * 100:.2f}%"
+
+    livelihood = form.get("seLivelihood")
+    if isinstance(livelihood, dict):
+        # "the main livelihoods being [X]": the three largest.
+        top = dict(sorted(livelihood.items(), key=lambda kv: -(_num(kv[1]) or 0))[:3])
+        tags["People: Type of livelihood (Agriculture, Forestry, Fishery)"] = _counts_by_label(top)
+    tags["People: Household based on livelihood"] = _counts_by_label(form.get("seHhLivelihood"))
+
+    # Shares of the households answer. Bare numbers: the template writes "percent" after them.
+    households = _num(form.get("seHouseholds"))
+    for key, tag in (("seElectricity", "People: electricity%"), ("seWash", "People: WASH%")):
+        count = _num(form.get(key))
+        if households and count is not None and count <= households:
+            tags[tag] = f"{count / households * 100:.2f}"
+    return {k: v for k, v in tags.items() if v is not None}
+
+
+def _education_totals(form: dict) -> dict:
+    """Occurrence-routed by the feasibility converter: primary, secondary, higher education."""
+    education = _matrix_totals((form or {}).get("seMatrix"))["education"]
+    return {f"education_{level}": (f"{education[level]:,.0f}" if level in education
+                                   else "[People: Education Level]")
+            for level in ("primary", "secondary", "higher")}
 
 
 def _people_tags(people: dict) -> dict:
@@ -398,8 +513,18 @@ def _people_tags(people: dict) -> dict:
     if male is not None and female is not None:
         tags["People: Gender disaggregation (% Male / % Female)"] = (
             f"{male:.1f}% Male / {female:.1f}% Female")
-        tags["People: Gender disaggregation within Project Area (% Male / % Female / % Other)"] = (
-            f"{male:.1f}% Male / {female:.1f}% Female")
+    if demo.get("total_population") and demo.get("household_number") is None:
+        # 6.3 ran but has no household count (some countries publish none, e.g. Indonesia).
+        tags["People: Household population and number of households"] = (
+            "no published household figure")
+
+    by_band: dict = {}
+    for row in (demo.get("age_distributions_male") or []) + (
+            demo.get("age_distributions_female") or []):
+        band = _age_band(row.get("age_group_id")) if isinstance(row, dict) else None
+        if band:
+            by_band[band] = by_band.get(band, 0) + (_num(row.get("population")) or 0)
+    tags["People: Age Group"] = _age_structure(by_band)
     return tags
 
 
@@ -573,6 +698,9 @@ def build_context(analyzer, form: dict | None, user_input: dict | None,
                     or (pathway.get("duration_years") or {}).get("default"))
     if run_duration:
         tags["NbS Pathway: x duration"] = f"{run_duration} years"
+        # Same figure as "x duration", so the document never quotes two durations.
+        tags["NbS Pathway: Duration of protection (10–40 years, default 30)"] = (
+            f"{run_duration} years")
 
     lookup = {_norm(k): v for k, v in tags.items() if v is not None}
 
@@ -601,4 +729,33 @@ def build_context(analyzer, form: dict | None, user_input: dict | None,
             _ha(benefit_sequestered) if benefit_sequestered is not None
             else "[Potential Benefit: X tonnes]"),
         **_benefit_pillar_counts(benefit),
+        **_education_totals(form),
     }
+
+
+if __name__ == "__main__":
+    # Self-check of the form mappings, no app needed:
+    #     python application/utils/document_generator/v3/context.py
+    _matrix = {a: {e: {"male": 100, "female": 80, "other": 2}
+                   for e in ("primary", "secondary", "higher")}
+               for a in ("0-14", "15-44", "45-beyond")}
+    _ctx = build_context(None, {
+        "seMatrix": _matrix, "seHouseholds": "777", "seElectricity": "701", "seWash": "900",
+        "seEmployment": {"employed": 611, "unemployed": 122, "economically-inactive": 233},
+        "seIplc": [{"name": "Sundanese", "individuals": 555}],
+        "seHhLivelihood": {"other": 44, "forestry-nbs": 42, "fishery-aquaculture": 0},
+    }, None)
+    t = _ctx["t"]
+    assert t("People: Gender disaggregation within Project Area (% Male / % Female / % Other)") \
+        == "54.9% Male / 44.0% Female / 1.1% Other"
+    assert t("People: Age Group Within Project Area") \
+        == "0–14: 546 (33.3%), 15–44: 546 (33.3%), 45+: 546 (33.3%)"
+    assert t("People: employment%") == "63.25%" and t("People: Employment Status") == "611"
+    assert t("People: IP&amp;LC or Ethnicity Identification") == "Sundanese"
+    assert t("People: Household based on livelihood") \
+        == "other (44 households), forestry/NbS (42 households)"
+    assert t("People: electricity%") == "90.22"
+    assert t("People: WASH%") == "[People: WASH%]"  # more WASH households than households
+    assert _ctx["education_primary"] == "546"
+    assert build_context(None, None, None)["education_higher"] == "[People: Education Level]"
+    print("context self-check ok")
