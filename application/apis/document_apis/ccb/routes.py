@@ -134,6 +134,53 @@ def _tpl_data_v3(session_id, analyzer):
 
 
 # legacy: /nbsapi/feature/document-data [POST]
+def render_ccb_document(session_id, document_type):
+    """Render the CCB docx from the saved sections plus the v3 analysis, to
+    generated-file/docx-ccb/<session_id>-ccb-templates.docx (= DocumentList.document_name), and
+    upload it. Called by the download and preview routes, so the file is always current."""
+    known_document_data = DocumentData.find_by_session_id_and_type(session_id, document_type)
+    if not known_document_data:
+        raise AppMessageException('File not found')
+
+    if isinstance(known_document_data.section_2, dict):
+        GeoLogic.handle_section_data(known_document_data)
+
+    known_user_session = UserSessions.find_by_session_id(session_id)
+    known_user = (User.query.filter_by(id=known_user_session.user_id).first()
+                  if known_user_session else None)
+
+    analyzer = DataAnalyzer.find_by_session_id(session_id)
+    # Project lifetime: the v2 MapExplorer params are dead; the v3 benefit run's
+    # assumptions carry the duration.
+    benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
+    duration = (benefit.get('assumptions') or {}).get('duration_years')
+
+    # Exactly what the template reads: the five section dicts, tpl_data, the preparer's
+    # user block and the project duration. The v2 tpl builder read the dead pickle
+    # analyser columns -- _tpl_data_v3 builds the referenced keys from the v3 JSONB.
+    data = {
+        'project_id': session_id,
+        'user': {
+            'fullname': known_user.name if known_user else '',
+            'email': known_user.email if known_user else '',
+            'phone': ((known_user.extended_data or {}).get('phone') or ''
+                      if known_user else ''),
+        },
+        'param': {
+            'project_duration': duration,
+        },
+        'section_1': known_document_data.section_1,
+        'section_2': known_document_data.section_2,
+        'section_3': known_document_data.section_3,
+        'section_4': known_document_data.section_4,
+        'section_5': known_document_data.section_5,
+
+        'tpl_data': _tpl_data_v3(session_id, analyzer),
+    }
+
+    generate_document_form(session_id, data)
+
+
 def _not_session_owner(session_id):
     """True when the session belongs to a user and the caller is not that user. Same rule as
     /projects/bind: anonymous sessions (user_id NULL or legacy 0) stay open; inactive rows count."""
@@ -232,44 +279,8 @@ def documents_update_document_data_ccb():
         db.session.add(known_document_data)
         db.session.commit()
 
-        if isinstance(known_document_data.section_2, dict):
-            GeoLogic.handle_section_data(known_document_data)
-
-        known_user_session = UserSessions.find_by_session_id(session_id)
-        known_user = (User.query.filter_by(id=known_user_session.user_id).first()
-                      if known_user_session else None)
-
-        analyzer = DataAnalyzer.find_by_session_id(session_id)
-        # Project lifetime: the v2 MapExplorer params are dead; the v3 benefit run's
-        # assumptions carry the duration.
-        benefit = (getattr(analyzer, 'benefit_json', None) if analyzer else None) or {}
-        duration = (benefit.get('assumptions') or {}).get('duration_years')
-
-        # Exactly what the template reads: the five section dicts, tpl_data, the preparer's
-        # user block and the project duration. The v2 tpl builder read the dead pickle
-        # analyser columns -- _tpl_data_v3 builds the referenced keys from the v3 JSONB.
-        data = {
-            'project_id': known_document_list.project_id,
-            'user': {
-                'fullname': known_user.name if known_user else '',
-                'email': known_user.email if known_user else '',
-                'phone': ((known_user.extended_data or {}).get('phone') or ''
-                          if known_user else ''),
-            },
-            'param': {
-                'project_duration': duration,
-            },
-            'section_1': known_document_data.section_1,
-            'section_2': known_document_data.section_2,
-            'section_3': known_document_data.section_3,
-            'section_4': known_document_data.section_4,
-            'section_5': known_document_data.section_5,
-
-            'tpl_data': _tpl_data_v3(session_id, analyzer),
-        }
-
-        # tasks = form_template_task.delay(session_id, data)
-        generate_document_form(session_id, data)
+        # No render here: the docx is built when it is downloaded or previewed
+        # (render_ccb_document), so a 5-section save is 5 cheap writes, not 5 renders.
 
         return make_response(jsonify(success_handler({ 'result': known_document_list.document_id }, status_code=status_code, message=message)), 200)
     except AppMessageException as e:

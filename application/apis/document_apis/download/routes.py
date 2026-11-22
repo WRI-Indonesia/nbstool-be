@@ -129,7 +129,12 @@ def documents_get_document_download_docx():
             folder_path = 'generated-file/docx/'
             client_name = "Preliminary Assessment Document.docx"
         
-        gcs.download(folder_path + known_document.document_name)
+        if known_document.document_type.lower() == 'ccb':
+            # CCB saves don't render; build from the saved sections now (always current).
+            from ..ccb.routes import render_ccb_document
+            render_ccb_document(known_document.project_id, known_document.document_type)
+        else:
+            gcs.download(folder_path + known_document.document_name)
         document_path = Path(folder_path + known_document.document_name).resolve()
         if not os.path.exists(document_path) or os.path.getsize(document_path) == 0:
             raise AppMessageException('we are still generating your file, please wait a minute')

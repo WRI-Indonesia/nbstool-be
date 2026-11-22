@@ -58,10 +58,12 @@ def documents_get_document_docx():
         if known_document.document_type.lower() == 'ccb':
             g_var.__description_data__['type'] = 'CCB Documentation'
             folder_path = 'generated-file/docx-ccb/'
+            # CCB saves don't render; build from the saved sections now (always current).
+            from .ccb.routes import render_ccb_document
+            render_ccb_document(known_document.project_id, known_document.document_type)
         else:
             folder_path = 'generated-file/docx/'
-        
-        gcs.download(folder_path + known_document.document_name)
+            gcs.download(folder_path + known_document.document_name)
         docx_dir = Path(folder_path + known_document.document_name).resolve()
         abs_path = os.path.join(Path(os.path.abspath(os.getcwd())), docx_dir)
         if not os.path.exists(abs_path):

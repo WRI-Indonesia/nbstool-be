@@ -2218,7 +2218,9 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters:
         - $ref: "#/components/parameters/document_id"
-      description: retrieve a DOCX document as a base64-encoded string
+      description: >-
+        retrieve a DOCX document as a base64-encoded string. A CCB document is
+        built fresh from its saved sections on every request.
       operationId: getDocx
     delete:
       tags:
@@ -2422,11 +2424,12 @@ paths:
           $ref: "#/components/responses/Internal Server Error"
       parameters: []
       description: >-
-        create or update CCB document section data, then regenerate the CCB
-        docx. The template's site/climate figures (location, area, elevation,
-        peatland flag, monthly precipitation/temperature tables) fill from the
-        session's v3 analysis; project duration comes from the benefit run's
-        assumptions.
+        create or update CCB document section data. Saving does not build the
+        docx: it is built from the saved sections when downloaded
+        (`/documents/download/docx`) or previewed (`/documents/docx`). The
+        template's site/climate figures (location, area, elevation, peatland
+        flag, monthly precipitation/temperature tables) fill from the session's
+        v3 analysis; project duration comes from the benefit run's assumptions.
       operationId: updateCcb
       requestBody:
         content:
@@ -3006,7 +3009,8 @@ paths:
         download a generated DOCX file by document id. The folder and download
         name follow the document's registered type: `FeasibilityV3` downloads
         as "Feasibility Study.docx", `MonitoringV3` as "Monitoring Plan.docx",
-        `CCB` as "CCB Project Documentation.docx",
+        `CCB` as "CCB Project Documentation.docx" (built fresh from the saved
+        sections on every request, so it takes a few seconds),
         anything else as the legacy "Preliminary Assessment Document.docx".
       operationId: downloadDocx
 
