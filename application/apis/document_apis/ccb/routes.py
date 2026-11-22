@@ -41,7 +41,8 @@ def _monthly_series(rows, value_key):
 
 
 def _series_stats(series):
-    stats = {'max': max(series), 'min': min(series), 'mean': sum(series) / len(series)}
+    stats = {'max': max(series), 'min': min(series), 'mean': round(sum(series) / len(series), 1),
+             'total': f"{sum(series):,.1f}"}
     stats['max_month'] = _MONTH_ABBR[series.index(stats['max'])]
     stats['min_month'] = _MONTH_ABBR[series.index(stats['min'])]
     return stats
@@ -117,6 +118,27 @@ def _tpl_data_v3(session_id, analyzer):
         'elevation_pct': f"{slope:.2f}" if isinstance(slope, (int, float)) else '',
     }]
 
+    # Fixed-text placeholders the analysis can fill; a missing figure keeps its [bracket] text.
+    def _num(value, fmt, missing):
+        return format(value, fmt) if isinstance(value, (int, float)) else missing
+
+    nature = (analyzer.nature_json if analyzer else None) or {}
+    data['min_elevation'] = _num(site.get('min_elevation'), ',.0f', '[number of minimal elevations]')
+    data['max_elevation'] = _num(site.get('max_elevation'), ',.0f', '[number of maximum elevations]')
+    data['protected_pct'] = _num(site.get('overlapping_protected_area_percentage'), '.2f',
+                                 '[percentage of protected area coverage]')
+    data['flii_score'] = _num(nature.get('flii_score'), '.2f', '[FLII Scores]')
+    data['flii_low_pct'] = _num(nature.get('low_integrity_percentage'), '.2f', '[x]')
+    medium, high = nature.get('medium_integrity_percentage'), nature.get('high_integrity_percentage')
+    data['flii_medium_high_pct'] = _num(
+        (medium or 0) + (high or 0) if medium is not None or high is not None else None,
+        '.2f', '[x]')
+    classes = [c.get('name') for c in site.get('land_cover_class') or []
+               if isinstance(c, dict) and c.get('id') != '0' and c.get('name')][:3]
+    data['forest_types'] = (', '.join(classes[:-1]) + ' and ' + classes[-1] if len(classes) > 1
+                            else classes[0] if classes
+                            else '[forest type 1], [forest type 2], and [forest type 3]')
+
     for key, rows_key, value_key in (
             ('precipitation', 'historical_precipitations', 'precipitation'),
             ('temperature', 'historical_temperatures', 'temperature')):
@@ -141,9 +163,6 @@ def render_ccb_document(session_id, document_type):
     known_document_data = DocumentData.find_by_session_id_and_type(session_id, document_type)
     if not known_document_data:
         raise AppMessageException('File not found')
-
-    if isinstance(known_document_data.section_2, dict):
-        GeoLogic.handle_section_data(known_document_data)
 
     known_user_session = UserSessions.find_by_session_id(session_id)
     known_user = (User.query.filter_by(id=known_user_session.user_id).first()
@@ -177,8 +196,26 @@ def render_ccb_document(session_id, document_type):
 
         'tpl_data': _tpl_data_v3(session_id, analyzer),
     }
+    data['tpl_data'].update(_tpl_data_form(known_document_data))
 
     generate_document_form(session_id, data)
+
+
+def _tpl_data_form(document_data):
+    """Values the template derives from the saved form: GHG accounting period length and the
+    four fauna lists combined for the flora/fauna summary table."""
+    section_1 = document_data.section_1 if isinstance(document_data.section_1, dict) else {}
+    section_5 = document_data.section_5 if isinstance(document_data.section_5, dict) else {}
+    period = '[xx]'
+    try:
+        start = datetime.strptime(section_1.get('ghg_start') or '', '%Y-%m-%d')
+        end = datetime.strptime(section_1.get('ghg_end') or '', '%Y-%m-%d')
+        period = f"{(end - start).days / 365.25:.0f}"
+    except ValueError:
+        pass
+    fauna = [row for key in ('proj_birds', 'proj_mammals', 'proj_amphibians', 'proj_reptiles')
+             for row in section_5.get(key) or [] if isinstance(row, dict)]
+    return {'ghg_period_years': period, 'fauna': fauna}
 
 
 def _not_session_owner(session_id):
@@ -265,16 +302,12 @@ def documents_update_document_data_ccb():
         elif section == '3':
             known_document_data.section_3 = data
             known_document_data.section_3_json = safe_data
-
-            GeoLogic.transform_ghg_data(known_document_data)
         elif section == '4':
             known_document_data.section_4 = data
             known_document_data.section_4_json = safe_data
         elif section == '5':
             known_document_data.section_5 = data
             known_document_data.section_5_json = safe_data
-
-            GeoLogic.summarize_fauna(known_document_data)
 
         db.session.add(known_document_data)
         db.session.commit()

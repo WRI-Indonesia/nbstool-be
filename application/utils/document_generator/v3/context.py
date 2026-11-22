@@ -706,7 +706,8 @@ def build_context(analyzer, form: dict | None, user_input: dict | None,
 
     def t(tag_text: str) -> str:
         value = lookup.get(_norm(tag_text))
-        return str(value) if value is not None else f"[{tag_text}]"
+        # Unescaped: the render autoescapes, and tag_text arrives XML-escaped ("IP&amp;LC").
+        return str(value) if value is not None else f"[{html.unescape(tag_text)}]"
 
     return {
         "t": t,

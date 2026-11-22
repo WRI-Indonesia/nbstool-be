@@ -84,7 +84,8 @@ def _generate(template_path: str, suffix: str, session_id: str, analyzer,
         image_path = render(os.path.join(OUTPUT_FOLDER, f"{session_id}-{stamp}-{variable}.png"))
         context[variable] = (InlineImage(doc, image_path, width=Mm(FIGURE_WIDTH_MM))
                              if image_path else f"[Figure: {variable.replace('_', ' ')}]")
-    doc.render(context)
+    # autoescape: form text with & or < would otherwise be written raw into the docx XML.
+    doc.render(context, autoescape=True)
     _fix_core_properties(doc)
     doc.save(output_path)
     return output_path

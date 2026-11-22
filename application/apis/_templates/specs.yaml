@@ -2462,6 +2462,26 @@ paths:
                     - 1
                 data:
                   type: object
+                  description: >-
+                    the section's answers. Fields the CCB document prints --
+                    section 1: project_name, doc_version, doc_issued,
+                    project_country, project_province, project_proponent
+                    [{org_name, contact_name, email, phone}], project_start,
+                    project_end, ghg_start, ghg_end, verification_schedule
+                    (dates as YYYY-MM-DD); section 2: proj_description,
+                    ecosystem_type, land_tenure, certification_standard,
+                    crediting_period; section 3: baseline_scenario,
+                    project_activity_ghg, annual_emission_reduction,
+                    leakage_assessment, carbon_methodology, permanence_risk;
+                    section 4: stakeholder_groups, fpic_process,
+                    community_impacts, benefit_sharing, grievance_mechanism;
+                    section 5: proj_existing_biodiversity_condition,
+                    proj_flora, proj_birds, proj_mammals, proj_amphibians,
+                    proj_reptiles (each [{species, common_name, iucn}]),
+                    proj_biodiversity_threat,
+                    proj_biodiversity_current_condition,
+                    proj_optional_criteria. Other fields are stored but not
+                    printed.
         required: true
 
   /documents/feasibility:

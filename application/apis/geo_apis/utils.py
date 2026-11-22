@@ -270,40 +270,20 @@ class GeoLogic():
 
     @staticmethod
     def coords_to_string(longitude, latitude):
-        lat_degrees = int(longitude)
-        lat_minutes = int((longitude - lat_degrees) * 60)
-        lat_seconds = (longitude - lat_degrees - lat_minutes / 60) * 3600
-        lat_direction = 'N' if longitude >= 0 else 'S'
-        
-        lon_degrees = int(latitude)
-        lon_minutes = int((latitude - lon_degrees) * 60)
-        lon_seconds = (latitude - lon_degrees - lon_minutes / 60) * 3600
-        lon_direction = 'E' if latitude >= 0 else 'W'
+        """Decimal degrees -> {'longitude': '107°56'51.9"E', 'latitude': '07°18'51.6"S'}."""
+        def dms(value, positive, negative):
+            seconds = round(abs(value) * 3600, 1)
+            degrees, rest = divmod(seconds, 3600)
+            minutes, seconds = divmod(rest, 60)
+            return '{:02d}°{:02d}\'{:04.1f}"{}'.format(
+                int(degrees), int(minutes), seconds, positive if value >= 0 else negative)
 
-        lat_sec = "{:.1f}".format(lat_seconds).split('.')
-        lat_sec = '{}.{}'.format(lat_sec[0].rjust(2, '0'), lat_sec[1])
-        lon_sec = "{:.1f}".format(lon_seconds).split('.')
-        lon_sec = '{}.{}'.format(lon_sec[0].rjust(2, '0'), lon_sec[1])
-
-        dms_string = '''{}°{}'{}"{} {}°{}'{}"{}'''.format(
-            str(abs(lat_degrees)).rjust(2, '0'), str(abs(lat_minutes)).rjust(2, '0'), lat_sec, lat_direction,
-            str(abs(lon_degrees)).rjust(2, '0'), str(abs(lon_minutes)).rjust(2, '0'), lon_sec, lon_direction
-        )
-        dms_split = dms_string.split(' ')
-        
         return {
-            'longitude': dms_split[0],
-            'latitude': dms_split[1],
+            'longitude': dms(longitude, 'E', 'W'),
+            'latitude': dms(latitude, 'N', 'S'),
         }
-        # return f"{abs(lat_degrees)}°{abs(lat_minutes)}'{"{:.2f}".format(lat_seconds)}\"{lat_direction} {abs(lon_degrees)}°{abs(lon_minutes)}'{"{:.2f}".format(lon_seconds)}\"{lon_direction}"
 
 
-    @staticmethod
-    def handle_section_data(known_document):
-        if known_document.section_2.get('emission_reduction') and type(known_document.section_2.get('emission_reduction')) == list:
-            known_document.section_2['emission_reduction'] = [n for n in known_document.section_2['emission_reduction'] if n]
-            
-    
     @staticmethod
     def get_template_data(session_id, sections):
         data = dict()
@@ -587,55 +567,3 @@ class GeoLogic():
                     data["doc_title"] = district + " " + GeoUtils.join_and(benefit_params.intervention)
 
         return data
-    
-
-    @staticmethod
-    def transform_ghg_data(data):
-
-        source_label = ['Burning of woody biomass', 'Combustion', 'Use of Fertilizer']
-        keys = ['redd_gas_site1', 'arr_gas_site1', 'wrc_gas_site1']
-
-        for process_key in keys:
-            if data.section_3 and data.section_3.get(process_key):
-                data.section_3['{}_ghg_data'.format(process_key.split('_')[0])] = [{
-                    'source': [
-                        {
-                            'name': n,
-                            'gas': [
-                                {
-                                    'name': str(d).upper(), 
-                                    'included-excluded': data.section_3.get(process_key)[i].get(d).get('included-excluded') or '',
-                                    'justification': data.section_3.get(process_key)[i].get(d).get('justification') or '',
-                                } for d in data.section_3.get(process_key)[i].keys()
-                            ]
-                        } for i, n in enumerate(source_label)
-                    ],
-                    'site_id': 1
-                }]
-    
-
-    @staticmethod
-    def summarize_fauna(data):
-
-        category_name_label = ['Birds', 'Mammals', 'Amphibians', 'Reptiles']
-        
-        data.section_5['project_fauna'] = []
-        data.section_5['summary_fauna'] = []
-        for category_name in category_name_label:
-            if data.section_5 and data.section_5.get('proj_{}'.format(category_name.lower())):
-                o = {
-                    'species': [],
-                    'iucn': [],
-                    'category_name': category_name
-                }
-
-                for d in data.section_5.get('proj_{}'.format(category_name.lower())):
-                    o['species'].append(str(d.get('species')))
-                    o['iucn'].append(str(d.get('iucn')))
-                    
-                    data.section_5['summary_fauna'].append(d)
-                
-                o['species'] = ', '.join(o['species'])
-                o['iucn'] = ', '.join(o['iucn'])
-
-                data.section_5['summary_fauna'].append(o)

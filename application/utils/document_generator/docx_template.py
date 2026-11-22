@@ -74,8 +74,9 @@ def fill_form_template_variables(session_id, template_name, document_saved_path,
     #     filename = session_id + ".jpg"
     #     user_folder = pathlib.Path("generated-file", "project-area",  filename).resolve()
     #     doc.replace_pic("map-placeholder.png", user_folder)
-    
-    doc.render(context)
+
+    # autoescape: form text with & or < would otherwise be written raw into the docx XML.
+    doc.render(context, autoescape=True)
 
     doc.save(document_saved_path)
 
