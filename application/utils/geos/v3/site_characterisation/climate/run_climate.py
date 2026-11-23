@@ -45,6 +45,7 @@ try:
     from .annual_temperature import analyze_annual_temperature
     from .current_carbon_storage import analyze_current_carbon_storage
     from .historical_burned_area import analyze_historical_burned_area
+    from .peat_depth import analyze_peat_depth
     from .fire_susceptibility import analyze_fire_susceptibility
     from .soil_classification import analyze_soil_classification
     from .soil_organic_carbon import analyze_soil_organic_carbon
@@ -60,6 +61,7 @@ except ImportError:  # `python run_climate.py`: no package around it
     from current_carbon_storage import analyze_current_carbon_storage
     from fire_susceptibility import analyze_fire_susceptibility
     from historical_burned_area import analyze_historical_burned_area
+    from peat_depth import analyze_peat_depth
     from pipeline import after, component_count, error_status, safe, stream
     from soil_classification import analyze_soil_classification
     from soil_organic_carbon import analyze_soil_organic_carbon
@@ -82,6 +84,7 @@ processes = [
     {'name': 'fire susceptibility', 'w': 1.1},
     {'name': 'burned area', 'w': 6.7},
     {'name': 'soil classification', 'w': 1.6},
+    {'name': 'peat depth', 'w': 0.8},   # one small raster (2 MB for all of SEA); unprofiled
     {'name': 'end', 'w': 0.1},
 ]
 
@@ -183,6 +186,7 @@ def _run_components(aoi: AOI, ecosystem_present: set[int] | None = None):
             pool.submit(safe, 'fire susceptibility', analyze_fire_susceptibility, aoi),
             pool.submit(safe, 'burned area', analyze_historical_burned_area, aoi),
             pool.submit(safe, 'soil classification', analyze_soil_classification, aoi),
+            pool.submit(safe, 'peat depth', analyze_peat_depth, aoi),
         )
 
         for future in futures:

@@ -72,6 +72,7 @@ try:
     from .climate.current_carbon_storage import analyze_current_carbon_storage
     from .climate.fire_susceptibility import analyze_fire_susceptibility
     from .climate.historical_burned_area import analyze_historical_burned_area
+    from .climate.peat_depth import analyze_peat_depth
     from .climate.run_climate import _carbon_shares
     from .climate.run_climate import processes as climate_processes
     from .climate.soil_classification import analyze_soil_classification
@@ -120,6 +121,7 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from key_species_presence import analyze_key_species
     from land_cover import analyze_land_cover
     from natural_disaster_risk import analyze_natural_risk
+    from peat_depth import analyze_peat_depth
     from people_demography import analyze_people_demography
     from pipeline import after, error_status, safe, stream
     from plant_species_occurrence import analyze_plant_species
@@ -215,6 +217,7 @@ _UNORDERED: dict[str, tuple] = {
     'fire susceptibility':        (analyze_fire_susceptibility, ()),
     'burned area':                (analyze_historical_burned_area, ()),
     'soil classification':        (analyze_soil_classification, ()),
+    'peat depth':                 (analyze_peat_depth, ()),
     # People, 6.1 to 6.3
     'people demography':          (analyze_people_demography, ()),
     'vulnerability assessment':   (analyze_vulnerability_assessment, ()),

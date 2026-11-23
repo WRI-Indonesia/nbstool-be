@@ -76,6 +76,7 @@ class SpeciesRecord:
     record_count: int         # number of occurrence rows, always >= 1
     latest_encounter: str | None
     basis_of_record: str | None
+    latest_year: int | None = None   # year of `latest_encounter`, for the card
 
 
 def most_frequent(series):
@@ -108,6 +109,7 @@ def _view(species: list[SpeciesRecord]) -> dict:
     return {'key_species': [
         {'species_id': r.species,
          'number_of_occurences': r.record_count,
+         'latest_record_year': r.latest_year,
          'family_id': r.taxon_class}
         for r in species
     ]}
@@ -167,6 +169,7 @@ def analyze_key_species(aoi: AOI) -> tuple[dict, dict]:
                 r.latest_encounter.strftime("%d %B %Y") if pd.notna(r.latest_encounter) else None
             ),
             basis_of_record=str(r.basis_of_record) if r.basis_of_record else None,
+            latest_year=int(r.latest_encounter.year) if pd.notna(r.latest_encounter) else None,
         )
         for r in grouped.itertuples(index=False)
     ]

@@ -169,6 +169,23 @@ def analyze_natural_risk(aoi: AOI) -> tuple[dict, dict]:
         for risk, field in FE_RISK_FIELDS.items()
     }
 
+    # HOW MUCH OF THE PROJECT AREA OVERLAPS FIRE RISK. No new rule: 0 / no coverage is "No risk"
+    # (team ruling 2026-08-27), so the area at risk is the area carrying ANY fire class -- the sum
+    # of 1.7's own distribution. Its percentage is of the PROJECT area; each class row keeps the
+    # distribution's own share, which is of the area at risk and sums to 100.
+    fire = leveled.get("fire")
+    fire_ha = sum(row.area_ha for row in fire.distribution) if fire else 0.0
+    view_results['fire_risk_area_ha'] = fire_ha
+    view_results['fire_risk_percentage'] = (
+        min(100.0, fire_ha / aoi.area_ha * 100.0) if aoi.area_ha > 0 else 0.0)
+    view_results['fire_risk_classes'] = [
+        {'id': str(row.code),
+         'dict': {'key': RISK_KEYS.get(row.code), 'fallback': row.label},
+         'area': row.area_ha,
+         'percentage': row.pct}
+        for row in (fire.distribution if fire else [])
+    ]
+
     return results, view_results
 
 

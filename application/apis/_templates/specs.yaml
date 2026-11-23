@@ -1324,7 +1324,8 @@ paths:
       description: >-
         Stream the full F02-P2 site characterisation for a session: General
         (1.1-1.8), Nature (2.1, 2.2, 2.3, 2.5, 2.6, 2.7 and endangered
-        trees), Climate (3.1-3.6 plus burned area) and People (6.1-6.3) as one
+        trees), Climate (3.1-3.6, burned area and peat depth) and People
+        (6.1-6.3) as one
         NDJSON response.
 
 
@@ -1344,6 +1345,33 @@ paths:
         (`{from, to}` years) and `plant_species`, one row per species as
         `{scientific_name, cites_appendix, occurrence_count}` where
         `cites_appendix` is `I`, `II`, `III` or `Not listed`.
+
+
+        TERRAIN (`terrain`) sends `elevations`, one row per elevation class
+        present as `{id, dict: {key, fallback}, area, percentage}`, beside
+        `slopes`; `percentage` is the share of the assessed area.
+
+
+        KEY SPECIES (`key species presence`): each `key_species` row carries
+        `latest_record_year`, the year of the most recent record of that
+        species in the project area, or null when no record is dated.
+
+
+        NATURAL DISASTER RISKS (`natural disaster risks`) also sends how much
+        of the project area carries any fire risk class:
+        `fire_risk_area_ha`, `fire_risk_percentage` (of the project area) and
+        `fire_risk_classes`, one row per class present as
+        `{id, dict: {key, fallback}, area, percentage}` where `percentage` is
+        the share of the area at risk. All zero / empty when the card reads
+        "No risk".
+
+
+        PEAT DEPTH (`peat depth`): `peat_area_ha`, `peat_depth_min_cm`,
+        `peat_depth_max_cm` and `peat_depths`, three rows `{id, name, area,
+        percentage}` with id `shallow` (under 100 cm), `medium` (100 to
+        300 cm) and `deep` (over 300 cm); `percentage` is the share of the
+        peatland. A project area with no peat sends `peat_area_ha` 0, null
+        depths and an empty list, with `error_status.state` = `failed`.
 
 
         BURNED AREA (`burned area`): `total_burned_area` is the CUMULATIVE

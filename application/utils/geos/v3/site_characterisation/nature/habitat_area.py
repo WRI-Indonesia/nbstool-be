@@ -75,6 +75,7 @@ they stay here as seam safety and change no number on the EPSG:4326 rasters it i
 from __future__ import annotations
 
 import io
+import logging
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -117,6 +118,8 @@ except ImportError:  # `python habitat_area.py`: no package around it
         OVERLAP_THRESHOLD,
     )
     from settings import get_setting, layer_path
+
+logger = logging.getLogger(__name__)
 
 GEOD = Geod(ellps=AOH_GEOD_ELLPS)
 
@@ -400,6 +403,9 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
     try:
         result = analyze_biodiversity(aoi)
     except Exception as e:
+        # Caught HERE, so it never reaches `pipeline.safe` and its traceback: log it, or a failure
+        # on a server leaves nothing behind but the exception's type name on the wire.
+        logger.exception('habitat area failed')
         # The inventory is a single point of failure for the whole component: without it there are
         # no candidates to read. A zero here would claim a survey found nothing, so the counts go
         # null instead.

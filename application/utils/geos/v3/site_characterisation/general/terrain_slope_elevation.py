@@ -117,7 +117,7 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
         )
         results = {'narrative': empty.narrative, 'tables': {'slope': [], 'elevation': []},
                    'values': {}, 'flags': empty.flags, 'missing': empty.missing}
-        view_results = {'slopes': [], 'average_slope_percentage': None,
+        view_results = {'slopes': [], 'elevations': [], 'average_slope_percentage': None,
                         'min_elevation': None, 'max_elevation': None,
                         'predominant_elevation_dict': None}
         return results, view_results
@@ -173,6 +173,17 @@ def analyze_terrain(aoi: AOI) -> tuple[dict, dict]:
                 'color': SLOPE_COLORS.get(row.code),
             }
             for row in slope_rows
+        ],
+        # The elevation classes, same rows as `slopes`: 1.4's own table, which the endpoint used
+        # to reduce to its dominant class.
+        'elevations': [
+            {
+                'id': str(row.code),
+                'dict': _elevation_dict(row.code),
+                'area': row.area_ha,
+                'percentage': row.pct,
+            }
+            for row in elev_rows
         ],
         'average_slope_percentage': round(average_slope, 2),
         # Exact metres from the continuous DEM, the same figures the narrative quotes.

@@ -603,6 +603,9 @@ GABAM_RASTER_TEMPLATE = "gabam/GABAM_{year}.tif"
 GABAM_BURNED_VALUE = 1                         # the notebook's BURNED_VALUE
 GABAM_GEOD_ELLPS = "WGS84"
 FIRE_HAZARD_RASTER = RISK_RASTERS["fire"]
+# Peat depth (Climate notebook "Peat Depth", commit `139dea8`). PEATGRIDS peat thickness in
+# CENTIMETRES, float32, ESRI:54034, ~1 km. The notebook's sea_peat_depth_54034.tif.
+PEAT_DEPTH_RASTER = "peat_depth_54034_v3.tif"
 FIRE_LEVELS = RISK_LEVELS
 
 # Soil classification, WRB 2006 (3.6). Class names are the WRB 2006 reference soil groups used by
