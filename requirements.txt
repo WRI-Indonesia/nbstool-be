@@ -98,6 +98,7 @@ mercantile==1.2.1
 # msgpack==1.0.8  # unused, off with v2 current-condition/benefit
 # multiprocess==0.70.16  # unused, off with v2 current-condition/benefit
 numpy==1.26.4
+openpyxl==3.1.5  # v3 4.4 conservation actions: pd.read_excel of the IUCN actions workbook needs it
 packaging==23.2
 pandas==2.2.2
 # partd==1.4.2  # unused, off with v2 current-condition/benefit
