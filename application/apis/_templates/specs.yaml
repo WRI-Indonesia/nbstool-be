@@ -1585,7 +1585,8 @@ paths:
                     activity ids, keyed forest / mangrove / peatland. Echoed
                     on the `assumptions` line and persisted. Filters 5.1's
                     activities/benefits content (empty activities list =
-                    all of a toggled-on pathway); never the quantification.
+                    all of a toggled-on pathway; an ecosystem left out
+                    counts as all toggles off); never the quantification.
                   examples:
                     - forest:
                         protect: true

@@ -655,7 +655,9 @@ def build_context(analyzer, form: dict | None, user_input: dict | None,
                     ids = {str(i) for i in (selection.get("activities") or [])}
                     chosen = [a["activity"] for a in available_entries
                               if not ids or str(a.get("activity_id")) in ids]
-            acts = chosen or available
+            # Available list only for runs that saved no choices at all; otherwise an untoggled
+            # pathway would list its activities as chosen.
+            acts = chosen or ([] if (plan_ecos or selections) else available)
             entry[f"activities_{name.lower()}"] = _join(acts) or "[NbS Pathway: Chosen NbS Activities]"
             names.extend(a for a in acts if a not in names)
         entry["activities_all"] = _join(names) or "[NbS Pathway: Chosen NbS Activities]"
@@ -759,4 +761,17 @@ if __name__ == "__main__":
     assert t("People: WASH%") == "[People: WASH%]"  # more WASH households than households
     assert _ctx["education_primary"] == "546"
     assert build_context(None, None, None)["education_higher"] == "[People: Education Level]"
+    # Manage-only run: untoggled Protect must not be listed as chosen.
+    _card = {"label": "Forest", "interventions": [
+        {"intervention": "Protect", "area_ha": 1.0, "activities": [{"activity_id": "1", "activity": "P1"}]},
+        {"intervention": "Manage", "area_ha": 1.0, "activities": [{"activity_id": "2", "activity": "M1"}]}]}
+    _an = type("A", (), {"site_information_json": {}, "nature_json": {}, "climate_json": {},
+                         "people_json": {}, "threat_json": {},
+                         "intervention_eligibility_json": {"ecosystems": [_card]},
+                         "benefit_json": {"assumptions": {"selections": {"forest": {
+                             "protect": False, "manage": True, "restore": False,
+                             "activities": []}}}}})()
+    _c = build_context(_an, None, None)
+    assert _c["eco0"]["activities_all"] == "M1", _c["eco0"]["activities_all"]
+    assert _c["t"]("NbS Pathway: Protect / Manage / Restore") == "Manage"
     print("context self-check ok")

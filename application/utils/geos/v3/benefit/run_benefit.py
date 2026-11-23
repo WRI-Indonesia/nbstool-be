@@ -165,9 +165,10 @@ def _filter_stage(stage: dict, selections) -> dict:
     """The 4.2 stage with `by_category` reduced to the user's selections.
 
     Toggle semantics match the docx context's: a de-toggled pathway drops its ecosystem's
-    activities; a non-empty `activities` id list keeps only those ids (empty = keep all). A
-    category whose ecosystem has no selection entry is kept -- absence of an opinion is not a
-    deselection. No selections at all -> the stage untouched.
+    activities; a non-empty `activities` id list keeps only those ids (empty = keep all). An
+    ecosystem missing from `selections` is OFF: the screen omits a card whose toggles are all
+    off, so keeping it leaked e.g. mangrove's Protect into a forest-Manage-only run. No
+    selections at all -> the stage untouched.
     """
     if not selections:
         return stage
@@ -180,11 +181,11 @@ def _filter_stage(stage: dict, selections) -> dict:
     filtered = {}
     for key, info in by_category.items():
         selection_key = _ECO_LABEL_TO_SELECTION.get(key.rsplit('|', 1)[-1].strip())
-        chosen = selections.get(selection_key) if selection_key else None
-        if not isinstance(chosen, dict):
-            filtered[key] = info
+        if selection_key is None:
+            filtered[key] = info  # no card for this ecosystem (no-reference pixels): not ours to drop
             continue
-        if not chosen.get(str(info.get('pathway', '')).lower()):
+        chosen = selections.get(selection_key)
+        if not isinstance(chosen, dict) or not chosen.get(str(info.get('pathway', '')).lower()):
             continue  # this ecosystem's pathway is toggled off
         ids = {str(i) for i in (chosen.get('activities') or [])}
         activities = info.get('activities') or []

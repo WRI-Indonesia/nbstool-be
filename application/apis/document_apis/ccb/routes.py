@@ -133,8 +133,10 @@ def _tpl_data_v3(session_id, analyzer):
     data['flii_medium_high_pct'] = _num(
         (medium or 0) + (high or 0) if medium is not None or high is not None else None,
         '.2f', '[x]')
+    # The sentence names FOREST types, so only forest/mangrove land-cover classes, largest first.
     classes = [c.get('name') for c in site.get('land_cover_class') or []
-               if isinstance(c, dict) and c.get('id') != '0' and c.get('name')][:3]
+               if isinstance(c, dict) and c.get('id') != '0'
+               and any(w in str(c.get('name', '')).lower() for w in ('forest', 'mangrove'))][:3]
     data['forest_types'] = (', '.join(classes[:-1]) + ' and ' + classes[-1] if len(classes) > 1
                             else classes[0] if classes
                             else '[forest type 1], [forest type 2], and [forest type 3]')
