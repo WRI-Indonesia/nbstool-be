@@ -132,6 +132,24 @@ THREAT_STORM_RISK = "threat/risk_storm_v3.tif"
 THREAT_FIRE_RISK = "threat/risk_fire_v3.tif"
 THREAT_PEAT_CANALS_DENSITY = "threat/peat_canals_density_v3.tif"
 THREAT_PEAT_CANAL = "threat/peat_canal.tif"
+# 7.3 Land Degradation (notebook `a6d8ae8`, three classes since `7069954`). The notebook reads land_degradation_54034.tif and
+# FC_2024_SEA_54034.tif off a UNC share; these are the bucket names agreed for them. BOTH MUST BE
+# ESRI:54034 -- the cell takes pixel area straight from the forest transform -- which is why the
+# 4326 THREAT_FOREST_2024 above cannot stand in. UPLOADED 2026-11-23 02:14 UTC at the v3 ROOT,
+# not under `threat/`. Both ESRI:54034, 29.43 m. The degradation raster's nodata is 15, not the
+# 0 the cell names; the clip fills it with 0 either way, so the five class areas are right and
+# simply add up to less than the AOI where the layer has no data.
+THREAT_LAND_DEGRADATION = "land_deg_54034_v3.tif"
+THREAT_FOREST_2024_54034 = "FC_2024_SEA_54034.tif"
+# The raster's classes, from the cell's own comment. Three since notebook `7069954`; the first
+# version also counted 4 / 5 as potential false positive / negative.
+THREAT_LAND_DEGRADATION_CLASSES = {
+    1: "Degraded",
+    2: "Stable",
+    3: "Improved",
+}
+# The cell's narrative hardcodes "between 2014 and 2024"; it is NOT THREAT_PERIOD_FROM/TO.
+THREAT_LAND_DEGRADATION_PERIOD = {"from": 2014, "to": 2024}
 
 # `ecosystem_v3.tif`. NOT the pathway raster's band 2, and the two DISAGREE for the same AOI --
 # 66,601 ha of dryland on AOI1 there against 67,506 ha here. Two differences matter:
@@ -491,6 +509,16 @@ NATUREMAP_MIN_PIXELS = 20
 # COVERAGE: Aves, Mammalia and Reptilia only. There are NO Amphibia rows, so
 # `amphibian_number_of_species` is a true zero from this source, not a missing value.
 KEY_SPECIES_TABLE = "sea.key_species_v3"
+
+# Plant species occurrence (2.7, notebook `19d86df`). GBIF plant points with a CITES appendix.
+# The notebook reads layer SEA_plant_occurrence from a file geodatabase; its own config comment
+# names this table as the PostGIS home. Geometry in "Shape", EPSG:4326, 584k points.
+PLANT_OCCURRENCE_TABLE = "sea.plant_occurrence"
+PLANT_SPECIES = "scientificName"      # the notebook's SPECIES
+PLANT_CITES = "citesAppendix"         # the notebook's CITES
+PLANT_YEAR = "year"                   # the notebook's YEAR
+PLANT_START_YEAR = 2000               # the notebook's START_YEAR
+PLANT_END_YEAR = 2026                 # the notebook's END_YEAR
 # Darwin Core class -> the endpoint's four species-count fields.
 KEY_SPECIES_CLASS_FIELDS = {
     "Aves": "bird_number_of_species",
@@ -557,15 +585,23 @@ DRY_MONTH_MM = 100
 #
 # SINCE 2026-08-22 the component is the notebook's 3.7 Historical Burned Area (team decision):
 # GABAM annual burned maps, one binary raster per year under `gabam/` in the v3 bucket, value
-# 1 = burned and 0 = NODATA, ~30 m, EPSG:4326. The headline is the UNION footprint (burned at
-# least once); the chart is per year and sums to more wherever ground reburned. The template is a
+# 1 = burned and 0 = NODATA, ~30 m, EPSG:4326. The headline WAS the union footprint (burned at
+# least once) until the 2026-11-23 re-port below made it the cumulative sum. The template is a
 # layer name with a {year} slot, resolved through `settings.layer_path` like every other v3 layer;
 # the notebook's own GABAM_RASTER_TEMPLATE points at a local folder instead.
 # The previous component reproduced v2's MODIS layers under `assets-geo/baseline/` (frequency
 # raster 2011-2020 + ten annual masks at a nominal 250 m); see git history of burned_area.py if
 # parity with v2's production figures is ever wanted again.
-GABAM_YEARS = list(range(2014, 2025))          # 2014..2024 inclusive
+#
+# SINCE NOTEBOOK `67ad949` (ported 2026-11-23) the section is Threat 7.2 and the calculation
+# changed: no union footprint, each year is measured on its NATIVE EPSG:4326 grid with geodesic
+# row areas, and the headline is the cumulative sum of the annual areas. The notebook's own
+# `YEARS = range(2014, 2024)` stops at 2023 while its narrative says "2014 and 2024" and the
+# bucket holds GABAM_2024.tif -- followed as published; put 2025 back here if upstream fixes it.
+GABAM_YEARS = list(range(2014, 2024))          # the notebook's YEARS: 2014..2023
 GABAM_RASTER_TEMPLATE = "gabam/GABAM_{year}.tif"
+GABAM_BURNED_VALUE = 1                         # the notebook's BURNED_VALUE
+GABAM_GEOD_ELLPS = "WGS84"
 FIRE_HAZARD_RASTER = RISK_RASTERS["fire"]
 FIRE_LEVELS = RISK_LEVELS
 
@@ -619,6 +655,12 @@ AOH_RASTER_ROOT = "habitat_area"
 # (e.g. "habitat_area_v2") or a complete https / /vsi url. No row means AOH_RASTER_ROOT above.
 AOH_RASTER_ROOT_SETTING = "AOH_RASTER_ROOT"
 AOH_TARGET_DN = 1   # DN marking suitable habitat
+# The notebook's OVERLAP_THRESHOLD (config, used by 4.4); 2.3's own cell hardcodes the same 90.
+# One constant for both so the two "more than 90% of the project area" sets cannot drift apart.
+OVERLAP_THRESHOLD = 90
+# IUCN Conservation Actions catalog for charismatic species (4.4). One sheet: Scientific name,
+# Class, code, Conservation Action, Conservation Activities, redlistCategory, Action Relevance.
+CONSERVATION_FILE = "habitat_area_v3/Charismatic_conservation_v3.xlsx"
 # Geodesic area, per the notebook: the rasters are EPSG:4326, where a pixel's ground area shrinks
 # with latitude, so habitat area is summed row by row from the ellipsoid rather than from a single
 # nominal cell size.

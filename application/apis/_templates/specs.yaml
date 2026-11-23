@@ -1095,7 +1095,7 @@ paths:
             type: array
             items:
               type: string
-              enum: [all ecosystems, dryland forest, mangrove, peatland]
+              enum: [all ecosystems, land degradation, dryland forest, mangrove, peatland]
           style: form
           explode: true
           description: >-
@@ -1113,6 +1113,11 @@ paths:
         card. `total_ecosystem_area_ha` counts all four classes, so the
         four cards sum to 100% of it and the total covers essentially the
         whole project area.
+
+        The `land degradation` section reports degraded, stable and improved
+        land over 2014-2024 and how the degraded part splits between forest
+        and non-forest. Where its data is not available for a project area
+        the line arrives zero-filled with `error_status.state` = `failed`.
       operationId: getThreat
 
   /geos/feature/pathway:
@@ -1206,10 +1211,15 @@ paths:
 
         MERGE RULES ARE PER STAGE, unchanged from the individual endpoints:
         site-characterisation lines flat-merge into one card set (People one
-        level deeper, by section); the four threat lines stay separate per
+        level deeper, by section); the five threat lines stay separate per
         tab, because the tabs reuse field names like `total_area_ha`; the
         `pathway` line's `data` is the complete PathwaySelection document,
         exactly the standalone endpoint's `result`.
+
+        ONE LINE EXISTS ONLY IN THIS STREAM: `conservation actions`, whose
+        `data` is a ConservationActions object. It is derived from the
+        `habitat area` line, so a retry of it re-runs that component too.
+        Merge it beside the pathway document.
 
         Every stage's caveats carry over: per-line `error_status` with
         partial/failed semantics, threat's coverage guards, pathway's
@@ -1313,9 +1323,36 @@ paths:
             healthy stream and look like the error path is broken.
       description: >-
         Stream the full F02-P2 site characterisation for a session: General
-        (1.1-1.8), Nature (2.1, 2.2, 2.3, 2.5, 2.6 and endangered trees),
-        Climate (3.1-3.6 plus burned area) and People (6.1-6.3) as one NDJSON
-        response.
+        (1.1-1.8), Nature (2.1, 2.2, 2.3, 2.5, 2.6, 2.7 and endangered
+        trees), Climate (3.1-3.6 plus burned area) and People (6.1-6.3) as one
+        NDJSON response.
+
+
+        HABITAT AREA (`habitat area`) also carries the habitat threshold:
+        `habitat_summary` counts species per share of the project area their
+        suitable habitat covers, keyed `<20%`, `20-40%`, `40-60%`, `60-80%`
+        and `>80%` (the middle three use an en dash); `over_90_species` is
+        `{count, en, vu, cr}` for the species covering more than 90% of the
+        project area. Each `species_list` row also carries `habitat_area_ha`,
+        `percentage_aoi` and `habitat_class`.
+
+
+        PLANT SPECIES OCCURRENCE (`plant species occurrence`) reports plant
+        species recorded in the project area: `plant_number_of_species`,
+        `plant_cites_appendix_i`, `plant_cites_appendix_ii`,
+        `plant_cites_appendix_iii` (species counts), `plant_period`
+        (`{from, to}` years) and `plant_species`, one row per species as
+        `{scientific_name, cites_appendix, occurrence_count}` where
+        `cites_appendix` is `I`, `II`, `III` or `Not listed`.
+
+
+        BURNED AREA (`burned area`): `total_burned_area` is the CUMULATIVE
+        burned area in hectares, the sum of the yearly values in
+        `historical_burned_areas`. Ground that burned in two years is counted
+        twice, so it can exceed the project area. Also sent:
+        `average_annual_burned_area`, `peak_burned_year` (null when nothing
+        burned) and `peak_burned_area`; each `historical_burned_areas` row
+        carries `percentage`, that year's share of the project area.
 
 
         UNITS: the Climate carbon fields (`total_carbon_storage`,
@@ -4172,17 +4209,19 @@ components:
       properties:
         process:
           type: string
-          enum: [preparation, all ecosystems, dryland forest, mangrove, peatland, end]
+          enum: [preparation, all ecosystems, land degradation, dryland forest, mangrove, peatland, end]
           description: >-
             which tab this line fills. `all ecosystems` is the Overview tab,
-            `dryland forest` is the Forest tab.
+            `dryland forest` is the Forest tab, `land degradation` is the
+            Land Degradation section.
         data:
           description: >-
-            the section payload -- ThreatOverview, ThreatForest,
-            ThreatMangrove or ThreatPeatland by `process`. `{}` on
+            the section payload -- ThreatOverview, ThreatLandDegradation,
+            ThreatForest, ThreatMangrove or ThreatPeatland by `process`. `{}` on
             `preparation` (which carries the plan) and on `end`.
           oneOf:
             - $ref: "#/components/schemas/ThreatOverview"
+            - $ref: "#/components/schemas/ThreatLandDegradation"
             - $ref: "#/components/schemas/ThreatForest"
             - $ref: "#/components/schemas/ThreatMangrove"
             - $ref: "#/components/schemas/ThreatPeatland"
@@ -4414,6 +4453,114 @@ components:
             canal_proximity: {type: [string, "null"]}
             drainage_pressure: {type: [string, "null"]}
             fire_risk: {type: [string, "null"]}
+
+    ThreatLandDegradation:
+      type: object
+      description: >-
+        the Land Degradation section. Land condition between 2014 and 2024
+        in three classes, over the whole project area and split by 2024
+        forest cover. All areas in hectares. The three class areas add up to
+        less than the project area where the assessment has no data.
+      properties:
+        degraded_ha:
+          type: number
+          description: area that showed signs of land degradation.
+        stable_ha:
+          type: number
+          description: area with no significant improvement or deterioration.
+        improved_ha:
+          type: number
+          description: area whose land condition improved.
+        degraded_inside_forest_ha:
+          type: number
+          description: the part of `degraded_ha` inside forest.
+        degraded_outside_forest_ha:
+          type: number
+          description: the part of `degraded_ha` outside forest.
+        period:
+          type: object
+          description: the years the assessment covers.
+          properties:
+            from: {type: integer, examples: [2014]}
+            to: {type: integer, examples: [2024]}
+        classes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          description: one row per class, in class order.
+          items:
+            type: object
+            properties:
+              class:
+                type: integer
+                enum: [1, 2, 3]
+              label:
+                type: string
+                enum: [Degraded, Stable, Improved]
+              inside_forest_ha: {type: number}
+              outside_forest_ha: {type: number}
+
+    ConservationActions:
+      type: object
+      description: >-
+        The `data` of the `conservation actions` line of the analysis stream:
+        IUCN conservation actions for the charismatic species whose suitable
+        habitat covers more than `overlap_threshold` percent of the project
+        area. Both lists are empty when no such species exists, which is
+        common. When the habitat area component did not complete the line
+        arrives with empty `data` and a retryable `error_status`.
+      properties:
+        conservation_actions:
+          type: object
+          properties:
+            overlap_threshold:
+              type: number
+              description: >-
+                percent of the project area a species' habitat must exceed.
+              examples: [90]
+            charismatic_species_count:
+              type: integer
+              minimum: 0
+            conservation_action_count:
+              type: integer
+              minimum: 0
+            actions:
+              type: array
+              description: >-
+                one row per conservation action, most shared first, then by
+                code.
+              items:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: IUCN Conservation Actions code.
+                    examples: ["2.1", "3.1.1"]
+                  conservation_action: {type: string}
+                  species_count: {type: integer, minimum: 1}
+                  species:
+                    type: array
+                    items: {type: string}
+                    description: scientific names, alphabetical.
+            species:
+              type: array
+              description: one row per species, alphabetical.
+              items:
+                type: object
+                properties:
+                  scientific_name: {type: string}
+                  taxon_class:
+                    type: string
+                    enum: [Amphibian, Mammal, Bird, Reptile]
+                  iucn_status: {type: string, examples: [EN]}
+                  percentage_aoi:
+                    type: number
+                    description: >-
+                      the species' suitable habitat as a percent of the
+                      project area.
+                  conservation_actions:
+                    type: array
+                    items: {type: string}
 
     PathwaySelection:
       type: object

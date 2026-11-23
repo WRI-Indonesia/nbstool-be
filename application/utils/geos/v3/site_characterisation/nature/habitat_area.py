@@ -52,6 +52,24 @@ NOTEBOOK BUG carried around, not reproduced: the notebook's cell uses a module-l
 nothing in the repo ever defines -- it imports `Geod` and reads `GEOD_ELLPS` from config but never
 instantiates it, so the cell raises NameError as published. `GEOD` here is
 `Geod(ellps=AOH_GEOD_ELLPS)`, which is plainly what was meant.
+
+RE-PORTED 2026-11-23 from notebook `7e08220` / `a299be8` ("Habitat Threshold"). What that added:
+  - HABITAT THRESHOLD. Each species is binned by `percentage_aoi` (`habitat_class`, five bins),
+    the bins are counted (`habitat_summary`), and the species covering MORE THAN 90% of the site
+    are counted with their CR / EN / VU split. The narrative is the notebook's.
+  - NO ROUNDING in the species table, as in the notebook: the bins and the >90 cut are taken on
+    the measured value, so 90.004% is over the threshold and 19.996% is still "<20%".
+  - A NEW INVENTORY SHAPE: `Class` (capital) plus `pattern`, `presence`, `origin`, `seasonality`
+    and `Candidate`. It reached `habitat_area_v3/` on 2026-11-23 (6,733 species); the default
+    `habitat_area/` inventory still has lowercase `class` and none of the five. So the loader
+    accepts either spelling and the five columns are passed through WHEN PRESENT. Internally the
+    column stays `class`, which is also what the three benefit modules sharing `_load_inventory`
+    read. TWO THINGS ABOUT THAT FILE, both upstream and both absorbed in `_load_inventory`: its
+    `raster_path` holds the notebook's local folders, and its `iucn_status` spells Vulnerable
+    `VN` and Critically Endangered `CN` (Data Deficient is empty), on which the cell's
+    `.eq("VU")` / `.eq("CR")` counts would read 0.
+The notebook's cell dropped its CRS branch, its zero-area guard and its unreadable-raster catch;
+they stay here as seam safety and change no number on the EPSG:4326 rasters it is written for.
 """
 
 from __future__ import annotations
@@ -78,6 +96,7 @@ try:
         AOH_RASTER_ROOT,
         AOH_TARGET_DN,
         AOH_TAXON_FIELDS,
+        OVERLAP_THRESHOLD,
     )
     from ...settings import get_setting, layer_path
 except ImportError:  # `python habitat_area.py`: no package around it
@@ -95,6 +114,7 @@ except ImportError:  # `python habitat_area.py`: no package around it
         AOH_RASTER_ROOT,
         AOH_TARGET_DN,
         AOH_TAXON_FIELDS,
+        OVERLAP_THRESHOLD,
     )
     from settings import get_setting, layer_path
 
@@ -103,6 +123,11 @@ GEOD = Geod(ellps=AOH_GEOD_ELLPS)
 INVENTORY_COLUMNS = {
     "species", "class", "raster_path", "iucn_status", "redlistCategory", "geometry",
 }
+# Carried per species by the notebook's new inventory; passed through when the file has them.
+INVENTORY_OPTIONAL_COLUMNS = ("pattern", "presence", "origin", "seasonality", "Candidate")
+
+# The notebook's `classes`, in display order. En dashes, as published.
+HABITAT_CLASSES = ["<20%", "20\u201340%", "40\u201360%", "60\u201380%", ">80%"]
 
 
 def geometry_area_ha(geometry):
@@ -135,6 +160,20 @@ def pixel_area_by_row(transform, height):
     return row_areas_ha
 
 
+def habitat_class(pct):
+
+    if pct < 20:
+        return "<20%"
+    if pct < 40:
+        return "20\u201340%"
+    if pct < 60:
+        return "40\u201360%"
+    if pct <= 80:
+        return "60\u201380%"
+
+    return ">80%"
+
+
 def _load_inventory():
     """The species inventory, read from wherever V3_BUCKET points.
 
@@ -144,8 +183,28 @@ def _load_inventory():
     path = layer_path(AOH_INVENTORY)
     if path.startswith("http"):
         with urllib.request.urlopen(path, timeout=60) as response:
-            return gpd.read_parquet(io.BytesIO(response.read()))
-    return gpd.read_parquet(path)
+            inventory = gpd.read_parquet(io.BytesIO(response.read()))
+    else:
+        inventory = gpd.read_parquet(path)
+    # The notebook's new inventory spells it `Class`; the published ones spell it `class`.
+    inventory = inventory.rename(columns={"Class": "class"})
+    # THE BUCKET LAYOUT IS `<Class>/<Species>.tif`. The inventory uploaded 2026-11-23 carries the
+    # notebook's LOCAL folders instead (`amphibians/X.tif`, `birds/migratory/breeding/X.tif`),
+    # none of which exist in the bucket, so every raster would answer 404. Class folder plus file
+    # name is the same path for the older inventories (identity on all 3,129 rows) and resolves
+    # the new one. Done here so the three benefit modules sharing this loader get it too.
+    inventory["raster_path"] = (
+        inventory["class"] + "/"
+        + inventory["raster_path"].str.replace("\\", "/").str.rsplit("/", n=1).str[-1]
+    )
+    # THE SAME INVENTORY MISSPELLS THREE STATUS CODES: Vulnerable is `VN`, Critically Endangered
+    # is `CN` and Data Deficient is empty, where every earlier inventory has VU / CR / DD. The
+    # cell counts `.eq("VU")` and `.eq("CR")`, so both read 0 on it. Read as the standard codes
+    # (team decision 2026-11-23); a no-op on the older inventories, and on this one once fixed.
+    status = inventory["iucn_status"].replace({"VN": "VU", "CN": "CR"})
+    inventory["iucn_status"] = status.mask(
+        status.isna() & inventory["redlistCategory"].eq("Data Deficient"), "DD")
+    return inventory
 
 
 def _species_habitat(row, aoi_geometry, aoi_crs, aoi_area_ha, target_dn):
@@ -215,11 +274,13 @@ def _species_habitat(row, aoi_geometry, aoi_crs, aoi_area_ha, target_dn):
     return {
         "species": row["species"],
         "class": row["class"],
-        "iucn_status": row["iucn_status"],
         "redlistCategory": row["redlistCategory"],
+        "iucn_status": row["iucn_status"],
+        **{column: row[column] for column in INVENTORY_OPTIONAL_COLUMNS if column in row.index},
         "pixel_count": pixel_count,
-        "habitat_area_ha": round(habitat_area_ha, 2),
-        "percentage_aoi": round(percentage_aoi, 2),
+        "habitat_area_ha": habitat_area_ha,
+        "percentage_aoi": percentage_aoi,
+        "habitat_class": habitat_class(percentage_aoi),
     }, None
 
 
@@ -263,10 +324,53 @@ def analyze_biodiversity(aoi: AOI, target_dn: int = AOH_TARGET_DN) -> dict:
     if not result_table.empty:
         result_table = result_table.sort_values(["class", "species"]).reset_index(drop=True)
 
-    class_summary = {} if result_table.empty else result_table["class"].value_counts().to_dict()
+    # The notebook's `taxon_classes`, in its order, absent classes as 0.
+    class_summary = {} if result_table.empty else (
+        result_table["class"]
+        .value_counts()
+        .reindex(["Amphibian", "Mammal", "Bird", "Reptile"], fill_value=0)
+        .to_dict()
+    )
     iucn_summary = (
         {} if result_table.empty else result_table["iucn_status"].value_counts().to_dict()
     )
+
+    # Habitat threshold. The notebook indexes an empty frame here and raises KeyError when no
+    # species has habitat; an empty table simply has nothing in any bin.
+    if result_table.empty:
+        habitat_summary = dict.fromkeys(HABITAT_CLASSES, 0)
+        over_90_count = en_count = vu_count = cr_count = 0
+    else:
+        habitat_summary = (
+            result_table["habitat_class"]
+            .value_counts()
+            .reindex(HABITAT_CLASSES, fill_value=0)
+            .to_dict()
+        )
+
+        over_90 = result_table[
+            result_table["percentage_aoi"] > OVERLAP_THRESHOLD
+        ]
+
+        over_90_count = len(over_90)
+
+        en_count = (
+            over_90["iucn_status"]
+            .eq("EN")
+            .sum()
+        )
+
+        vu_count = (
+            over_90["iucn_status"]
+            .eq("VU")
+            .sum()
+        )
+
+        cr_count = (
+            over_90["iucn_status"]
+            .eq("CR")
+            .sum()
+        )
 
     return {
         "aoi_area_ha": round(aoi_area_ha, 2),
@@ -276,6 +380,11 @@ def analyze_biodiversity(aoi: AOI, target_dn: int = AOH_TARGET_DN) -> dict:
         "species_count": len(result_table),
         "class_summary": class_summary,
         "iucn_summary": iucn_summary,
+        "habitat_summary": {k: int(v) for k, v in habitat_summary.items()},
+        "over_90_count": int(over_90_count),
+        "en_count": int(en_count),
+        "vu_count": int(vu_count),
+        "cr_count": int(cr_count),
         "species": result_table,
         "failures": failures,
     }
@@ -300,7 +409,8 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
                    'tables': {'species': []}, 'values': {}, 'flags': flags, 'retryable': True}
         return results, dict.fromkeys(AOH_TAXON_FIELDS.values(), None) | {
             'total_wildlife_species': None, 'habitat_species_name': [],
-            'species_list': [], 'iucn_summary': None}
+            'species_list': [], 'iucn_summary': None,
+            'habitat_summary': None, 'over_90_species': None}
 
     species_rows = result["species"].to_dict(orient="records")
     class_summary = result["class_summary"]
@@ -354,9 +464,21 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
             'taxon_class': row["class"],
             'iucn_status': row["iucn_status"],
             'redlist_category': row["redlistCategory"],
+            'habitat_area_ha': row["habitat_area_ha"],
+            'percentage_aoi': row["percentage_aoi"],
+            'habitat_class': row["habitat_class"],
+            **{column.lower(): row[column] for column in INVENTORY_OPTIONAL_COLUMNS
+               if column in row},
         }
         for row in species_rows
     ]
+
+    # The HABITAT THRESHOLD card: species per overlap bin, and the >90% set with its split.
+    threshold = {
+        'habitat_summary': result["habitat_summary"],
+        'over_90_species': {'count': result["over_90_count"], 'en': result["en_count"],
+                            'vu': result["vu_count"], 'cr': result["cr_count"]},
+    }
 
     values = {
         'aoi_area_ha': result["aoi_area_ha"],
@@ -365,6 +487,11 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
         'species_count': result["species_count"],
         'class_summary': class_summary,
         'iucn_summary': result["iucn_summary"],
+        'habitat_summary': result["habitat_summary"],
+        'over_90_count': result["over_90_count"],
+        'en_count': result["en_count"],
+        'vu_count': result["vu_count"],
+        'cr_count': result["cr_count"],
     }
 
     if not species_names:
@@ -378,15 +505,33 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
             'retryable': retryable,
         }
         return results, dict(counts, total_wildlife_species=total, habitat_species_name=[],
-                             species_list=[], iucn_summary={})
+                             species_list=[], iucn_summary={}, **threshold)
 
-    named = ", ".join(species_names[:5])
-    more = f", and {len(species_names) - 5} more" if len(species_names) > 5 else ""
+    species_count = total
+    over_90_count, en_count = result["over_90_count"], result["en_count"]
+    vu_count, cr_count = result["vu_count"], result["cr_count"]
+
+    if over_90_count > 0:
+
+        narrative = (
+            f"Project area supports the area of habitat for "
+            f"{species_count:,} species. A subset of "
+            f"{over_90_count:,} species has more than 90% habitat "
+            f"overlapped within the project, including "
+            f"{en_count:,} EN, {vu_count:,} VU, and "
+            f"{cr_count:,} CR species."
+        )
+
+    else:
+
+        narrative = (
+            f"Project area supports the area of habitat for "
+            f"{species_count:,} species. Most of the species have "
+            f"less than 90% habitat overlapped within the project."
+        )
+
     results = {
-        'narrative': (
-            f"The selected area contains suitable habitat for {total} species, including "
-            f"{named}{more}."
-        ),
+        'narrative': narrative,
         'tables': {'species': species_rows},
         'values': values,
         'flags': flags,
@@ -400,7 +545,8 @@ def analyze_habitat_area(aoi: AOI) -> tuple[dict, dict]:
     # occurrences are a separate card and share no field with these -- see the module docstring.
     return results, dict(counts, total_wildlife_species=total, habitat_species_name=species_names,
                          species_list=species_list,
-                         iucn_summary={k: int(v) for k, v in result["iucn_summary"].items()})
+                         iucn_summary={k: int(v) for k, v in result["iucn_summary"].items()},
+                         **threshold)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,10 @@ into one plan; this module does the same one level up:
     zero-shapes included;
   - pathway is ONE component named `pathway`, whose `data` is the same PathwaySelection document
     its own endpoint returns. Its internal 4.1 -> 4.2 -> 4.3 sequence is one function call here.
+  - `conservation actions` is F02-P4's 4.4. It is a lookup on 2.3's species table, so it is a
+    DEPENDENT of `habitat area` here and exists only in this union stream: the standalone pathway
+    endpoint has no 2.3 result to feed it. Its `data` is `{conservation_actions: {...}}`, which
+    flat-merges into the stored pathway document beside the cards.
 
 Component names are unique across the three stages (asserted at import), so `process` still
 identifies a card, `?process=` retries work across the whole union, and the client's merge rule
@@ -35,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor
 try:
     from .common import AOI
     from .pipeline import after, error_status, safe, stream
+    from .pathway.conservation_actions import analyze_conservation_actions
     from .pathway.run_pathway import run_pathway
     from .site_characterisation.run_site_characterisation import (
         COMPONENTS as _SITECHAR_COMPONENTS,
@@ -53,6 +58,7 @@ except ImportError:  # `python run_analysis.py`: no package around it
     for _sub in ("general", "nature", "climate", "people"):
         sys.path.insert(0, str(_here.parent / "site_characterisation" / _sub))
     from common import AOI
+    from conservation_actions import analyze_conservation_actions
     from pipeline import after, error_status, safe, stream
     from run_pathway import run_pathway
     from run_site_characterisation import (
@@ -79,16 +85,19 @@ _UNORDERED: dict[str, tuple] = {
     **_SITECHAR_COMPONENTS,
     **{name: (fn, ()) for name, fn in _THREAT_SECTIONS.items()},
     'pathway': (_pathway_component, ()),
+    'conservation actions': (analyze_conservation_actions, ('habitat area',)),
 }
 
 COST = {
     **_SITECHAR_COST,
     **_THREAT_COST,
     'pathway': 3.5,
+    'conservation actions': 0.5,   # one small workbook, cached per process, and a merge
 }
 
 _collisions = (set(_SITECHAR_COMPONENTS) & set(_THREAT_SECTIONS)) \
-    | ({'pathway'} & (set(_SITECHAR_COMPONENTS) | set(_THREAT_SECTIONS)))
+    | ({'pathway', 'conservation actions'}
+       & (set(_SITECHAR_COMPONENTS) | set(_THREAT_SECTIONS)))
 if _collisions:
     raise RuntimeError(f"process names collide across stages: {sorted(_collisions)}")
 

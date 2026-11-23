@@ -90,6 +90,7 @@ try:
     from .nature.habitat_area import analyze_habitat_area
     from .nature.key_biodiversity_areas import analyze_kba
     from .nature.key_species_presence import analyze_key_species
+    from .nature.plant_species_occurrence import analyze_plant_species
     from .nature.run_nature import processes as nature_processes
     from .people.people_demography import analyze_people_demography
     from .people.run_people import processes as people_processes
@@ -121,6 +122,7 @@ except ImportError:  # `python run_site_characterisation.py`: no package around 
     from natural_disaster_risk import analyze_natural_risk
     from people_demography import analyze_people_demography
     from pipeline import after, error_status, safe, stream
+    from plant_species_occurrence import analyze_plant_species
     from protected_areas_wdpa import analyze_protected_areas
     from run_climate import _carbon_shares
     from run_climate import processes as climate_processes
@@ -202,6 +204,7 @@ _UNORDERED: dict[str, tuple] = {
     'key species presence':       (analyze_key_species, ()),
     'conservation significance':  (analyze_conservation_significance, ()),
     'endangered trees':           (analyze_endangered_trees, ()),
+    'plant species occurrence':   (analyze_plant_species, ()),
     # Climate, 3.1 to 3.6 plus the carbon shares step
     'current carbon storage':     (analyze_current_carbon_storage, ()),
     'soil organic carbon':        (_soc_after_ecosystem, ('ecosystem type',)),

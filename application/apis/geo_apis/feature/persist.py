@@ -49,6 +49,8 @@ ANALYSIS_COLUMNS = {
     **SITECHAR_COLUMNS,
     **{p['name']: ('threat_json', True) for p in threat_processes[1:-1]},
     'pathway': ('intervention_eligibility_json', False),
+    # 4.4: `{conservation_actions: {...}}`, merged beside the pathway cards
+    'conservation actions': ('intervention_eligibility_json', False),
 }
 
 

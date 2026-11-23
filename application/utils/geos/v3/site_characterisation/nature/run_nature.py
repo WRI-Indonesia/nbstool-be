@@ -38,6 +38,11 @@ the source's own 20-cell stability warning. 2.6 reports this in its flags rather
 and there is still no Nature contract field for it -- see conservation_significance.py for the
 shape it emits in the meantime.
 
+2.7 Plant Species Occurrence (notebook `19d86df`, ported 2026-11-23) is a seventh component:
+GBIF plant records from `sea.plant_occurrence` with their CITES listing. It sits BESIDE
+`endangered trees`, not in place of it -- recorded species against modelled richness. And 2.3 now
+also carries the notebook's Habitat Threshold (`7e08220`); see habitat_area.py.
+
 A sixth component, `endangered trees`, has no notebook heading at all. It fills the endpoint's
 `endangered_tree_number_of_species` from `tree_species_v3.tif`, carrying over the V2 backend's
 logic (`get_nature_richness_data` in current_condition.py) because that is the only existing
@@ -81,6 +86,7 @@ try:
     from .habitat_area import analyze_habitat_area
     from .key_biodiversity_areas import analyze_kba
     from .key_species_presence import analyze_key_species
+    from .plant_species_occurrence import analyze_plant_species
 except ImportError:  # `python run_nature.py`: no package around it
     import pathlib
     import sys
@@ -94,6 +100,7 @@ except ImportError:  # `python run_nature.py`: no package around it
     from key_biodiversity_areas import analyze_kba
     from key_species_presence import analyze_key_species
     from pipeline import component_count, error_status, safe, stream
+    from plant_species_occurrence import analyze_plant_species
 
 # One entry per step, in emission order. `w` is a relative cost. These have not been profiled
 # across several AOIs the way General's were, so treat them as an ordering, not a measurement:
@@ -110,12 +117,13 @@ processes = [
     {'name': 'key species presence', 'w': 1.5},
     {'name': 'conservation significance', 'w': 1.4},
     {'name': 'endangered trees', 'w': 0.9},
+    {'name': 'plant species occurrence', 'w': 1.5},   # one PostGIS query, like 2.5; unprofiled
     {'name': 'end', 'w': 0.1},
 ]
 
 
 def _run_components(aoi: AOI):
-    """Run all six live components concurrently, yielding view_results in emission order."""
+    """Run all seven live components concurrently, yielding view_results in emission order."""
     workers = component_count(processes)
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='nature') as pool:
         futures = (
@@ -126,6 +134,7 @@ def _run_components(aoi: AOI):
             pool.submit(safe, 'conservation significance',
                         analyze_conservation_significance, aoi),
             pool.submit(safe, 'endangered trees', analyze_endangered_trees, aoi),
+            pool.submit(safe, 'plant species occurrence', analyze_plant_species, aoi),
         )
 
         for future in futures:

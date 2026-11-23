@@ -36,6 +36,10 @@ try:
         THREAT_ECOSYSTEM,
         THREAT_ECOSYSTEM_CLASSES,
         THREAT_ECOSYSTEM_DISPLAY_NAMES,
+        THREAT_FOREST_2024_54034,
+        THREAT_LAND_DEGRADATION,
+        THREAT_LAND_DEGRADATION_CLASSES,
+        THREAT_LAND_DEGRADATION_PERIOD,
         THREAT_PEAT_CANAL,
         THREAT_PEAT_CANALS_DENSITY,
         THREAT_PERIOD_FROM,
@@ -45,6 +49,7 @@ try:
     from ..settings import layer_path
     from .all_ecosystems import analyze_all_ecosystem
     from .dryland_forest import analyze_dryland_forest
+    from .land_degradation import analyze_land_degradation
     from .mangrove import analyze_mangrove
     from .peatland import analyze_peatland
 except ImportError:  # `python run_threat.py`: no package around it
@@ -61,12 +66,17 @@ except ImportError:  # `python run_threat.py`: no package around it
         THREAT_ECOSYSTEM,
         THREAT_ECOSYSTEM_CLASSES,
         THREAT_ECOSYSTEM_DISPLAY_NAMES,
+        THREAT_FOREST_2024_54034,
+        THREAT_LAND_DEGRADATION,
+        THREAT_LAND_DEGRADATION_CLASSES,
+        THREAT_LAND_DEGRADATION_PERIOD,
         THREAT_PEAT_CANAL,
         THREAT_PEAT_CANALS_DENSITY,
         THREAT_PERIOD_FROM,
         THREAT_PERIOD_TO,
     )
     from dryland_forest import analyze_dryland_forest
+    from land_degradation import analyze_land_degradation
     from mangrove import analyze_mangrove
     from peatland import analyze_peatland
     from pipeline import error_status, safe, stream
@@ -89,6 +99,7 @@ _PERIOD = {"from": THREAT_PERIOD_FROM, "to": THREAT_PERIOD_TO}
 # layers, which are narrower again. See `_guard`.
 _CORE_LAYERS = (THREAT_ECOSYSTEM, THREAT_DISTURBANCE)
 _PEAT_LAYERS = _CORE_LAYERS + (THREAT_PEAT_CANALS_DENSITY, THREAT_PEAT_CANAL)
+_DEGRADATION_LAYERS = (THREAT_FOREST_2024_54034, THREAT_LAND_DEGRADATION)
 
 _G0 = {"area_ha": 0.0, "percentage": 0}
 _NO_DRIVERS = {"non_natural": [], "natural": [], "other": []}
@@ -111,6 +122,14 @@ _ZERO_PEATLAND = {"peatland": {
     "drivers": {"canal_proximity": "-", "canal_distance_m": None,
                 "drainage_pressure": "-", "fire_risk": "-"}}}   # no ecosystem -> "-"
 
+_ZERO_DEGRADATION = {
+    "degraded_ha": 0.0, "stable_ha": 0.0, "improved_ha": 0.0,
+    "degraded_inside_forest_ha": 0.0, "degraded_outside_forest_ha": 0.0,
+    "table": [{"class": value, "inside_forest_pixels": 0, "inside_forest_ha": 0.0,
+               "outside_forest_pixels": 0, "outside_forest_ha": 0.0}
+              for value in THREAT_LAND_DEGRADATION_CLASSES],
+    "narrative": ""}
+
 _NO_COVERAGE = ("The threat layers do not cover this project area, so no disturbance can be "
                 "reported. The forest disturbance layer reaches only 10 degrees north, which "
                 "excludes Thailand, Laos, Myanmar, northern Vietnam and the northern Philippines.")
@@ -122,6 +141,7 @@ _NO_COVERAGE = ("The threat layers do not cover this project area, so no disturb
 processes = [
     {'name': 'preparation', 'w': 0.1},
     {'name': 'all ecosystems', 'w': 3.0},
+    {'name': 'land degradation', 'w': 4.0},   # two windowed reads, no vector work; unprofiled
     {'name': 'mangrove', 'w': 5.0},
     {'name': 'dryland forest', 'w': 8.0},
     {'name': 'peatland', 'w': 12.0},
@@ -354,10 +374,60 @@ def _peatland(aoi: AOI) -> tuple[dict, dict]:
     return results, view
 
 
+def _land_degradation(aoi: AOI) -> tuple[dict, dict]:
+    """7.3 shaped into the Land Degradation section: five areas and the per-class table.
+
+    TWO WAYS TO HAVE NOTHING TO SAY, both final answers rather than retryable crashes:
+      - the layers are NOT PUBLISHED in this environment's bucket, so every open answers HTTP
+        404. That is `missing`, not `partial`: a retry button would be offered on every project
+        until the upload lands. Any other open failure is re-raised and stays retryable -- a
+        network blip looks nothing like a 404;
+      - the layers do not reach this AOI, handled by `_guard` like every other section.
+    """
+    published = True
+    try:
+        raw, covered = _guard(analyze_land_degradation, aoi, _DEGRADATION_LAYERS,
+                              _ZERO_DEGRADATION)
+    except rasterio.errors.RasterioIOError as error:
+        if '404' not in str(error):
+            raise
+        raw, covered, published = _ZERO_DEGRADATION, True, False
+
+    view = {
+        'degraded_ha': raw['degraded_ha'],
+        'stable_ha': raw['stable_ha'],
+        'improved_ha': raw['improved_ha'],
+        'degraded_inside_forest_ha': raw['degraded_inside_forest_ha'],
+        'degraded_outside_forest_ha': raw['degraded_outside_forest_ha'],
+        'period': dict(THREAT_LAND_DEGRADATION_PERIOD),
+        # The notebook's table, one row per class.
+        'classes': [
+            {'class': row['class'],
+             'label': THREAT_LAND_DEGRADATION_CLASSES[row['class']],
+             'inside_forest_ha': row['inside_forest_ha'],
+             'outside_forest_ha': row['outside_forest_ha']}
+            for row in raw['table']
+        ],
+    }
+
+    missing = []
+    if not published:
+        missing.append("The land degradation layers are not published yet, so land degradation "
+                       "cannot be reported.")
+    elif not covered:
+        missing.append("The land degradation layers do not cover this project area, so land "
+                       "degradation cannot be reported.")
+    results = {'narrative': raw['narrative'], 'tables': {'classes': raw['table']},
+               'values': {k: v for k, v in raw.items() if k not in ('table', 'narrative')},
+               'flags': [], 'missing': missing}
+    return results, view
+
+
 # name -> the adapter that produces (results, view_results). No dependency column, unlike
-# run_site_characterisation: none of these four needs another's output.
+# run_site_characterisation: none of these five needs another's output.
 SECTIONS = {
     'all ecosystems': _overview,
+    'land degradation': _land_degradation,
     'mangrove': _mangrove,
     'dryland forest': _dryland,
     'peatland': _peatland,

@@ -84,6 +84,19 @@ PEATLAND_RAW = {"peatland": {
     "drivers": {"canal_proximity": "High", "canal_distance_m": 0.0,
                 "drainage_pressure": "Medium", "fire_risk": "High"},
 }}
+DEGRADATION_RAW = {
+    "degraded_ha": 40.0, "stable_ha": 300.0, "improved_ha": 25.0,
+    "degraded_inside_forest_ha": 15.0, "degraded_outside_forest_ha": 25.0,
+    "table": [
+        {"class": 1, "inside_forest_pixels": 10, "inside_forest_ha": 15.0,
+         "outside_forest_pixels": 20, "outside_forest_ha": 25.0},
+        {"class": 2, "inside_forest_pixels": 100, "inside_forest_ha": 200.0,
+         "outside_forest_pixels": 50, "outside_forest_ha": 100.0},
+        {"class": 3, "inside_forest_pixels": 5, "inside_forest_ha": 10.0,
+         "outside_forest_pixels": 8, "outside_forest_ha": 15.0},
+    ],
+    "narrative": "A total of 40.00 ha within the project area showed signs of land degradation.",
+}
 
 # The label->key lookup reads the app database; this suite is no-network, so it keys nothing.
 R.mapping_key = lambda *args: None
@@ -91,6 +104,7 @@ R.analyze_all_ecosystem = lambda aoi: OVERVIEW_RAW
 R.analyze_dryland_forest = lambda aoi: DRYLAND_RAW
 R.analyze_mangrove = lambda aoi: MANGROVE_RAW
 R.analyze_peatland = lambda aoi: PEATLAND_RAW
+R.analyze_land_degradation = lambda aoi: DEGRADATION_RAW
 
 aoi = FakeAOI()
 
@@ -136,6 +150,47 @@ check("peatland: converted/loss replaces loss+gain",
 check("peatland: the three indicators are flat strings",
       (pt["canal_proximity"], pt["drainage_pressure"], pt["fire_risk"]) == ("High", "Medium", "High"))
 
+print("\n== 7.3 land degradation")
+res, ld = R._land_degradation(aoi)
+check("land degradation: the three areas and the forest split are flat",
+      (ld["degraded_ha"], ld["degraded_inside_forest_ha"],
+       ld["degraded_outside_forest_ha"], ld["improved_ha"], ld["stable_ha"])
+      == (40.0, 15.0, 25.0, 25.0, 300.0))
+check("land degradation: three labelled classes, no false-positive/negative (notebook 7069954)",
+      [c["class"] for c in ld["classes"]] == [1, 2, 3]
+      and [c["label"] for c in ld["classes"]] == ["Degraded", "Stable", "Improved"]
+      and "total_degradation_ha" not in ld and "false_positive_ha" not in ld)
+check("land degradation: its own 2014-2024 period, not the disturbance record's",
+      ld["period"] == {"from": 2014, "to": 2024})
+check("land degradation: the narrative stays in results, a clean run has no error_status",
+      res["narrative"].startswith("A total of") and error_status(res) is None)
+
+
+def _unpublished(aoi):
+    raise R.rasterio.errors.RasterioIOError("HTTP response code: 404")
+
+
+R.analyze_land_degradation = _unpublished
+res, ld0 = R._land_degradation(aoi)
+st = error_status(res)
+check("land degradation: an unpublished layer is `failed`, not a retry button",
+      st is not None and st["state"] == "failed" and st["retryable"] is False)
+check("land degradation: and the section keeps its full shape, zero-filled",
+      ld0["degraded_ha"] == 0.0 and len(ld0["classes"]) == 3)
+
+
+def _network(aoi):
+    raise R.rasterio.errors.RasterioIOError("Timeout was reached")
+
+
+R.analyze_land_degradation = _network
+try:
+    R._land_degradation(aoi)
+    check("land degradation: any other read failure still raises (so it stays retryable)", False)
+except R.rasterio.errors.RasterioIOError:
+    check("land degradation: any other read failure still raises (so it stays retryable)", True)
+R.analyze_land_degradation = lambda aoi: DEGRADATION_RAW
+
 print("\n== an ecosystem the AOI does not contain")
 R.analyze_mangrove = lambda aoi: {"mangrove": dict(
     MANGROVE_RAW["mangrove"], total_area_ha=0.0, main_pressure="Not identified",
@@ -152,7 +207,7 @@ R.analyze_mangrove = lambda aoi: MANGROVE_RAW
 
 print("\n== the envelope, which is site-characterisation's")
 lines = [json.loads(x) for x in R.stream_threat(aoi)]
-check("six lines: preparation, four tabs, end", len(lines) == 6)
+check("seven lines: preparation, five sections, end", len(lines) == 7)
 check("first is preparation carrying the plan",
       lines[0]["process"] == "preparation" and "processes" in lines[0]["data"])
 check("last is end with a null next",
@@ -207,7 +262,7 @@ if "--live" in sys.argv:
     live = prepare_aoi(gpd.read_file("zip://" + zipped.replace("\\", "/")))
     got = [json.loads(x) for x in R.stream_threat(live)]
     by = {ln["process"]: ln["data"] for ln in got}
-    check("six lines", len(got) == 6)
+    check("seven lines", len(got) == 7)
     ovl = by["all ecosystems"]
     check("the three cards sum to the total ecosystem area",
           abs(sum(c["area_ha"] for c in ovl["ecosystems"])

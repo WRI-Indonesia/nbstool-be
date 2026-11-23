@@ -7,8 +7,8 @@ envelope and the per component failure rule come from v3/pipeline.py, and what l
 `analyze_*(aoi)` functions, so all six are ported.
 
 An eighth step, `burned area`, fills the contract's two burned-area fields from the notebook's
-3.7 Historical Burned Area (GABAM 2014-2024) -- see historical_burned_area.py, and note that its
-union headline and its annual series deliberately do not add up. The wire name stays `burned
+burned-area section (Threat 7.2 since notebook `67ad949`, GABAM 2014-2023) -- see
+historical_burned_area.py; its headline is the cumulative sum of the annual series. The wire name stays `burned
 area` so retry URLs and the frontend's process list did not change when the source did
 (2026-08-22; previously a port of v2's MODIS-based logic).
 

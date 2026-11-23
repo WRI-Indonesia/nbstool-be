@@ -38,6 +38,10 @@ try:
         ADMIN_BOUNDARIES_TABLE,
         KBA_TABLE,
         KEY_SPECIES_TABLE,
+        PLANT_CITES,
+        PLANT_OCCURRENCE_TABLE,
+        PLANT_SPECIES,
+        PLANT_YEAR,
         REFERENCE_CRS,
         SOCIAL_SCHEMA,
         WDPA_TABLE,
@@ -47,6 +51,10 @@ except ImportError:  # imported as a top-level module by a component run as a sc
         ADMIN_BOUNDARIES_TABLE,
         KBA_TABLE,
         KEY_SPECIES_TABLE,
+        PLANT_CITES,
+        PLANT_OCCURRENCE_TABLE,
+        PLANT_SPECIES,
+        PLANT_YEAR,
         REFERENCE_CRS,
         SOCIAL_SCHEMA,
         WDPA_TABLE,
@@ -327,6 +335,32 @@ def load_key_species_intersecting(aoi) -> gpd.GeoDataFrame:
             k."Shape"           as geom
         from {KEY_SPECIES_TABLE} k, aoi
         where k."Shape" && aoi.geom and ST_Intersects(k."Shape", aoi.geom)
+        ''',
+        aoi,
+    )
+
+
+def load_plants_intersecting(aoi) -> gpd.GeoDataFrame:
+    """GBIF plant occurrence points inside the AOI, with the three columns 2.7 reads.
+
+    The notebook loads the whole SEA layer (584k points) from a file geodatabase and filters it
+    with `plants.geometry.intersects(aoi_geom)`. Same predicate here, run in PostGIS, so only the
+    points inside the AOI ever leave the database. The columns keep the notebook's own names.
+
+    ORDER IS PINNED, and it is not cosmetic: 2.7 gives a species the FIRST I / II / III appendix
+    it meets in row order, so a species with mixed rows would otherwise change answer with the
+    query plan. OBJECTID_1 is the table's primary key and the geodatabase's own feature order.
+    """
+    return _load_intersecting(
+        f'''
+        select
+            p."{PLANT_SPECIES}",
+            p."{PLANT_CITES}",
+            p."{PLANT_YEAR}",
+            p."Shape" as geom
+        from {PLANT_OCCURRENCE_TABLE} p, aoi
+        where p."Shape" && aoi.geom and ST_Intersects(p."Shape", aoi.geom)
+        order by p."OBJECTID_1"
         ''',
         aoi,
     )
