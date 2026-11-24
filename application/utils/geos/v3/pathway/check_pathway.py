@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from run_pathway import INTERVENTIONS, _activities_for, _ecosystem_card  # noqa: E402
+from run_pathway import INTERVENTIONS, _activities_for, _ecosystem_card, _fit_to_site  # noqa: E402
 
 PASS = FAIL = 0
 
@@ -110,6 +110,37 @@ for name, info in (("Dryland", DRYLAND), ("Mangrove", EMPTY)):
           [i["intervention"] for i in c["interventions"]] == INTERVENTIONS)
 check("the display label differs from the analysis key", card["label"] == "Forest")
 check("eligible tracks area", by_name["Protect"]["eligible"] is True)
+
+print("\n== the cards never sum past the project area")
+
+
+def _payload(project_area_ha: float, unclassified_ha: float) -> dict:
+    return {"project_area_ha": project_area_ha,
+            "eligible_area_ha": 90.0, "eligible_percentage": 90.0 / project_area_ha * 100,
+            "unclassified_area_ha": unclassified_ha,
+            "unclassified_percentage": unclassified_ha / project_area_ha * 100,
+            "ecosystems": [_ecosystem_card("Dryland", DRYLAND, project_area_ha),
+                           _ecosystem_card("Mangrove", EMPTY, project_area_ha)]}
+
+
+over = _fit_to_site(_payload(99.5, 0.0))      # 100 ha of pixels on a 99.5 ha site
+fitted = over["ecosystems"][0]
+check("an overcount is scaled back to exactly the project area",
+      abs(fitted["total_area_ha"] - 99.5) < 1e-9
+      and abs(fitted["total_area_percentage"] - 100.0) < 1e-9)
+check("the partition still holds after scaling",
+      abs(sum(i["area_ha"] for i in fitted["interventions"]) + fitted["ineligible_area_ha"]
+          - fitted["total_area_ha"]) < 1e-9)
+check("in-card shares are untouched",
+      abs(fitted["interventions"][0]["percentage"] - 40.0) < 1e-9
+      and abs(fitted["ineligible_percentage"] - 10.0) < 1e-9)
+check("the eligible headline scales with the cards",
+      abs(over["eligible_area_ha"] - 90.0 * 0.995) < 1e-9
+      and over["eligible_percentage"] <= 100.0)
+under = _fit_to_site(_payload(120.0, 20.0))   # undercount: Unclassified already fills the gap
+check("an undercount is left exactly as computed",
+      under["ecosystems"][0]["total_area_ha"] == 100.0 and under["unclassified_area_ha"] == 20.0
+      and under["eligible_area_ha"] == 90.0)
 
 if "--live" in sys.argv:
     print("\n== live: a real AOI end to end")

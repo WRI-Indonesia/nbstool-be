@@ -136,6 +136,35 @@ def _ecosystem_card(name: str, info: dict, project_area_ha: float) -> dict:
     }
 
 
+def _fit_to_site(payload: dict) -> dict:
+    """Scale the payload's areas down when the cards plus Unclassified sum past the project area.
+
+    Card areas are counts of ~30 m pixels; the project area is measured from the outline, so the
+    two differ by edge noise. An undercount is already absorbed by Unclassified, but an overcount
+    has nowhere to go and a fully classified site reads over 100%. Every area is scaled by the same
+    factor, so each card's partition and its in-card shares are untouched. The components' own
+    results are not modified -- F02-P5 reads those, not this payload.
+    """
+    cards = payload["ecosystems"]
+    total = sum(c["total_area_ha"] for c in cards) + payload["unclassified_area_ha"]
+    if total <= payload["project_area_ha"]:
+        return payload
+
+    scale = payload["project_area_ha"] / total
+    for key in ("eligible_area_ha", "eligible_percentage",
+                "unclassified_area_ha", "unclassified_percentage"):
+        payload[key] *= scale
+    # min: a sole card scales to 100.00000000000001, which a client testing `> 100` would flag.
+    payload["eligible_percentage"] = min(100.0, payload["eligible_percentage"])
+    for card in cards:
+        for key in ("total_area_ha", "total_area_percentage", "ineligible_area_ha"):
+            card[key] *= scale
+        card["total_area_percentage"] = min(100.0, card["total_area_percentage"])
+        for intervention in card["interventions"]:
+            intervention["area_ha"] *= scale
+    return payload
+
+
 def run_pathway(aoi: AOI) -> dict:
     """The Pathway Selection payload for one AOI: one card per ecosystem, plus the run's defaults.
 
@@ -158,7 +187,7 @@ def run_pathway(aoi: AOI) -> dict:
         messages.extend(component.flags)
         messages.extend(component.missing)
 
-    return {
+    return _fit_to_site({
         "project_area_ha": aoi.area_ha,
         "applicable": by_ecosystem.applicable,
         # Headline from 4.1: how much of the site qualifies for any pathway at all.
@@ -179,7 +208,7 @@ def run_pathway(aoi: AOI) -> dict:
         },
         "carbon_risk": dict(CARBON_RISK_DEFAULTS),
         "messages": messages,
-    }
+    })
 
 
 if __name__ == "__main__":

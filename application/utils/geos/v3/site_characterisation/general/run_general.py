@@ -94,7 +94,8 @@ def _ecosystem_on_site_area(aoi: AOI) -> tuple[dict, dict]:
         scale = aoi.area_ha / total
         for c in cards:
             c['area'] *= scale
-            c['percentage'] *= scale
+            # min: a sole class scales to 100.00000000000001, and the card colours `> 100` red.
+            c['percentage'] = min(100.0, c['percentage'] * scale)
     return results, view
 
 
