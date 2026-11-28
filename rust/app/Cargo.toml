@@ -1,0 +1,32 @@
+[package]
+name = "nbstool-be"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "nbstool-be: the HTTP server; every route is answered by nbstool-api"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "nbstool-be"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+nbstool-api = { path = "../api" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[workspace]
+
+# The raster/vector/figure/docx crates are compute-bound: optimized even in the dev build the
+# replay runs (opt-level does not change float results; Rust has no fast-math). The api and the
+# server stay at 0 for quick rebuilds.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.nbstool-api]
+opt-level = 0

@@ -1,0 +1,45 @@
+[package]
+name = "nbstool-api"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "nbstool-be routes ported to Rust; wired into rust/app one route at a time"
+
+[dependencies]
+axum = "0.8"
+bcrypt = "0.17"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+dotenvy = "0.15"
+form_urlencoded = "1"
+jsonwebtoken = "9"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "hostname"] }
+minijinja = "2"
+serde = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "json", "chrono", "derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde-pickle = "1"
+base64 = "0.22"
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+tokio = { version = "1", features = ["sync", "rt"] }
+nbstool-vector = { path = "../vector" }
+nbstool-geo = { path = "../geo" }
+nbstool-fig = { path = "../fig" }
+adler2 = "2"
+nbstool-docx = { path = "../docx" }
+nbstool-doccontext = { path = "../doccontext" }
+# zlib itself (not miniz): the docx archive must deflate byte for byte as CPython zipfile
+flate2 = { version = "1", features = ["zlib"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+crc32fast = "1"
+encoding_rs = "0.8"
+uuid = { version = "1", features = ["v4"] }
+multer = "3"
+futures-util = { version = "0.3", default-features = false }
+
+[workspace]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

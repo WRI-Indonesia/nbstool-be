@@ -1,0 +1,16 @@
+[package]
+name = "nbstool-doccontext"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Database rows -> the exact docxtpl contexts (v3 feasibility/monitoring, CCB) of the Python"
+
+[dependencies]
+# preserve_order: contexts keep Python's dict order (the CCB sections' pickle order, the CSV row).
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+
+[dev-dependencies]
+nbstool-docx = { path = "../docx" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[workspace]

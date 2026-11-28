@@ -1,0 +1,16 @@
+[package]
+name = "nbstool-docx"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "docxtpl 0.18.0 rendering (v3 feasibility / monitoring, CCB) ported to Rust"
+
+[dependencies]
+fancy-regex = "0.14"
+minijinja = { version = "2.24", default-features = false, features = ["builtins", "serde", "std_collections"] }
+regex = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha1 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[workspace]

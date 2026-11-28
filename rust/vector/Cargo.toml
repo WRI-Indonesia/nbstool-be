@@ -1,0 +1,15 @@
+[package]
+name = "nbstool-vector"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "POST /geos/map/upload parsing (GeoLogic zip/kml/kmz) ported to Rust on GDAL/OGR"
+
+[dependencies]
+gdal = "0.18"
+gdal-sys = "0.11"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+unicode-normalization = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[workspace]

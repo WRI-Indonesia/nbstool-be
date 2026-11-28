@@ -1,0 +1,24 @@
+[package]
+name = "nbstool-geo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "v3 raster analysis (application/utils/geos/v3) ported to Rust on the same GDAL"
+
+[dependencies]
+gdal = "0.18"
+gdal-sys = "0.11"
+geographiclib-rs = "0.2.7"
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio"] }
+tokio = { version = "1", features = ["rt"] }
+parquet = { version = "53", default-features = false, features = ["snap"] }
+bytes = "1"
+# 4.4 conservation actions: pd.read_excel of the charismatic-species workbook (agent geo-streams)
+calamine = { version = "=0.28.0", default-features = false }
+
+[dev-dependencies]
+# tests/streams.rs drives the async database components from pool threads (Handle::block_on)
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[workspace]

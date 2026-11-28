@@ -1,0 +1,43 @@
+scratch-db/pgdata/
+scratch-db/*.dump
+scratch-db/*.log
+scratch-db/baseline.json
+scratch-db/http-staging-recording/
+scratch-db/tmp-record/
+gdal-sdk/*.lib
+geo/target/
+docx/target/
+fig/target/
+fig/proof/tiles/
+vector/target/
+geo/target-benefit/
+fig/proof/__pycache__/
+fig/proof/expected/geopdf/*/
+geo/target-streams/
+doccontext/target/
+doccontext/proof/expected/
+doccontext/proof/all/
+doccontext/proof/__pycache__/
+geo/target-vector/
+geo/target-social/
+_pre-lift-backup/
+
+# --- Private: never publish (2026-11-28) ---------------------------------------------------
+# Recorded cases and proof fixtures hold real data from the staging copy (emails, project
+# titles, session ids, AOI boundaries); notes describe live weaknesses and internal servers.
+app-cases/
+scratch-db/
+research/
+deploy/
+_pre-lift-backup/
+cutover.sh
+MAP.md
+STATUS.md
+HANDOFF.md
+DECISIONS.md
+RULES.md
+*/proof/
+*/README.md
+*/tests/
+*/examples/
+api/src/**/fixtures/

@@ -1,0 +1,7 @@
+# Disk guard (ADR-007): D: is nearly full, so no debug info and no incremental cache.
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.release]
+debug = 0
