@@ -8,6 +8,8 @@ generated-geopdf/
 .claude/
 loadtest/aoi_pool.json
 rsrc/
+# Rust port working folder: source lives on branch rust-port; the rest is private (see rust-port:rust/.gitignore)
+rust/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

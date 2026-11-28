@@ -1,5 +1,6 @@
 """
-Component 4.4 Activities by IUCN Conservation Actions Classification Scheme (notebook `3d99e09`).
+Component 4.4 Activities by IUCN Conservation Actions Classification Scheme (notebook `3d99e09`,
+summary by activity since `8d2b0d4`).
 
 For the charismatic species whose Area of Habitat covers MORE THAN 90% of the project area: which
 IUCN conservation actions apply, how many species share each action, and the actions per species.
@@ -9,7 +10,14 @@ catalog. Despite the heading, nothing here touches 4.2's activities: "Conservati
 a free-text column of the workbook.
 
 Data. `CONSERVATION_FILE`, one sheet: Scientific name, Class, code, Conservation Action,
-Conservation Activities, redlistCategory, Action Relevance. 582 rows, 126 species, 16 actions.
+Conservation Activities, Details Conservation Activities, redlistCategory, Action Relevance.
+582 rows, 126 species, 16 codes, each with one action name and one activity sentence.
+
+SINCE NOTEBOOK `8d2b0d4` THE SUMMARY IS BY ACTIVITY: grouped on code + "Conservation Activities"
+and `conservation_action_count` counts distinct ACTIVITY sentences. Codes can share a sentence
+(3.1.1 Harvest management and 3.1.2 Trade management do), so the count can be smaller than the
+number of rows. The cell's per-species list and its duplicate check still use the action NAME;
+only that table's printed heading was renamed. Followed as published.
 
 STAGE-FED. The notebook's cell reads `result`, the species table that the NATURE notebook's 2.3
 cell leaves in the kernel -- so it is a NameError in a fresh Pathway kernel as published. Here it
@@ -179,7 +187,7 @@ def analyze_conservation_actions(aoi: AOI, habitat: tuple[dict, dict]) -> tuple[
         .groupby(
             [
                 "code",
-                "Conservation Action"
+                "Conservation Activities"
             ],
             as_index=False
         )
@@ -218,14 +226,18 @@ def analyze_conservation_actions(aoi: AOI, habitat: tuple[dict, dict]) -> tuple[
     )
 
     conservation_action_count = (
-        species_actions["Conservation Action"]
+        species_actions["Conservation Activities"]
         .nunique()
     )
 
-    # 1. Conservation action summary: one row per action, the species sharing it.
+    # 1. Conservation action summary: one row per code, the species sharing it. The cell's
+    #    summary carries the activity sentence; the action NAME is kept beside it (one per code
+    #    in the workbook) so the field the wire already had does not disappear.
+    action_names = species_actions.drop_duplicates("code").set_index("code")["Conservation Action"]
     actions = [
         {'code': str(row["code"]),
-         'conservation_action': row["Conservation Action"],
+         'conservation_action': action_names[row["code"]],
+         'conservation_activity': row["Conservation Activities"],
          'species_count': int(row["species_count"]),
          'species': [name.replace("_", " ") for name in row["species"].split(", ")]}
         for row in action_summary.to_dict(orient="records")

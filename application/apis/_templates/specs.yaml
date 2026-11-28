@@ -4552,11 +4552,15 @@ components:
             conservation_action_count:
               type: integer
               minimum: 0
+              description: >-
+                number of distinct conservation activities in `actions`.
+                Codes can share one activity, so this can be smaller than
+                the number of rows.
             actions:
               type: array
               description: >-
-                one row per conservation action, most shared first, then by
-                code.
+                one row per conservation action code, most shared first, then
+                by code.
               items:
                 type: object
                 properties:
@@ -4564,7 +4568,13 @@ components:
                     type: string
                     description: IUCN Conservation Actions code.
                     examples: ["2.1", "3.1.1"]
-                  conservation_action: {type: string}
+                  conservation_action:
+                    type: string
+                    description: the IUCN action name.
+                    examples: [Site/area protection]
+                  conservation_activity:
+                    type: string
+                    description: what the action means in practice, one sentence.
                   species_count: {type: integer, minimum: 1}
                   species:
                     type: array
@@ -4589,6 +4599,7 @@ components:
                   conservation_actions:
                     type: array
                     items: {type: string}
+                    description: IUCN action names that apply to the species.
 
     PathwaySelection:
       type: object
